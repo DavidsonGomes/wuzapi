@@ -9,6 +9,7 @@ import (
 	"wuzapi/controllers/group"
 	"wuzapi/controllers/session"
 	"wuzapi/controllers/user"
+	"wuzapi/controllers/webhook"
 	internalTypes "wuzapi/internal/types"
 
 	"github.com/justinas/alice"
@@ -55,8 +56,8 @@ func (s *server) routes() {
 	sessionController := &session.SessionController{Controller: s.Controller}
 	sessionController.SignRoutes(c)
 
-	s.Router.Handle("/webhook", c.Then(s.SetWebhook())).Methods("POST")
-	s.Router.Handle("/webhook", c.Then(s.GetWebhook())).Methods("GET")
+	webhookController := &webhook.WebhookController{Controller: s.Controller}
+	webhookController.SignRoutes(c)
 
 	chatController := &chat.ChatController{Controller: s.Controller}
 	chatController.SignRoutes(c)
