@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"wuzapi/webhook"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/mdp/qrterminal/v3"
@@ -598,16 +599,17 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if webhookurl != "" {
 			log.Info().Str("url", webhookurl).Msg("Calling webhook")
 			values, _ := json.Marshal(postmap)
+			webhook := webhook.Webhook{ClientHttp: clientHttp}
 			if path == "" {
 				data := make(map[string]string)
 				data["jsonData"] = string(values)
 				data["token"] = mycli.token
-				go callHook(webhookurl, data, mycli.userID)
+				go webhook.CallHook(webhookurl, data, mycli.userID)
 			} else {
 				data := make(map[string]string)
 				data["jsonData"] = string(values)
 				data["token"] = mycli.token
-				go callHookFile(webhookurl, data, mycli.userID, path)
+				go webhook.CallHookFile(webhookurl, data, mycli.userID, path)
 			}
 		} else {
 			log.Warn().Str("userid", strconv.Itoa(mycli.userID)).Msg("No webhook set for user")
