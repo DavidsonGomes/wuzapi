@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 	"wuzapi/controllers/chat"
+	controllerBase "wuzapi/controllers/controller_base"
 	"wuzapi/controllers/group"
 	"wuzapi/controllers/session"
 	"wuzapi/controllers/user"
@@ -19,7 +20,7 @@ import (
 
 type Middleware = alice.Constructor
 
-func (s *server) routes() {
+func routes(s *controllerBase.Controller) {
 
 	ex, err := os.Executable()
 	if err != nil {
@@ -35,7 +36,7 @@ func (s *server) routes() {
 	}
 
 	c := alice.New()
-	c = c.Append(s.authalice)
+	c = c.Append(s.AuthAlice)
 	c = c.Append(hlog.NewHandler(log))
 
 	c = c.Append(hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
@@ -53,22 +54,22 @@ func (s *server) routes() {
 	c = c.Append(hlog.RefererHandler("referer"))
 	c = c.Append(hlog.RequestIDHandler("req_id", "Request-Id"))
 
-	sessionController := &session.SessionController{Controller: s.Controller}
+	sessionController := &session.SessionController{Controller: s}
 	sessionController.SignRoutes(c)
 
-	webhookController := &webhook.WebhookController{Controller: s.Controller}
+	webhookController := &webhook.WebhookController{Controller: s}
 	webhookController.SignRoutes(c)
 
-	chatController := &chat.ChatController{Controller: s.Controller}
+	chatController := &chat.ChatController{Controller: s}
 	chatController.SignRoutes(c)
 
-	chatMessageController := &chat.ChatMessageController{Controller: s.Controller}
+	chatMessageController := &chat.ChatMessageController{Controller: s}
 	chatMessageController.SignRoutes(c)
 
-	userController := &user.UserController{Controller: s.Controller}
+	userController := &user.UserController{Controller: s}
 	userController.SignRoutes(c)
 
-	groupController := &group.GroupController{Controller: s.Controller}
+	groupController := &group.GroupController{Controller: s}
 	groupController.SignRoutes(c)
 
 	s.Router.PathPrefix("/").Handler(http.FileServer(http.Dir(exPath + "/static/")))

@@ -303,7 +303,7 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 	}
 }
 
-func (s *Controller) Authalice(next http.Handler) http.Handler {
+func (s *Controller) AuthAlice(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		var ctx context.Context
@@ -362,6 +362,121 @@ func (s *Controller) Authalice(next http.Handler) http.Handler {
 
 // Middleware: Authenticate connections based on Token header/uri parameter
 func (s *Controller) Auth(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		var ctx context.Context
+		userid := 0
+		txtid := ""
+		webhook := ""
+		jid := ""
+		events := ""
+
+		// Get token from headers or uri parameters
+		token := r.Header.Get("token")
+		if token == "" {
+			token = strings.Join(r.URL.Query()["token"], "")
+		}
+
+		myuserinfo, found := s.UserInfoCache.Get(token)
+		if !found {
+			log.Info().Msg("Looking for user information in DB")
+			// Checks DB from matching user and store user values in context
+			rows, err := s.Db.Query("SELECT id,webhook,jid,events FROM users WHERE token=? LIMIT 1", token)
+			if err != nil {
+				s.Respond(w, r, http.StatusInternalServerError, err)
+				return
+			}
+			defer rows.Close()
+			for rows.Next() {
+				err = rows.Scan(&txtid, &webhook, &jid, &events)
+				if err != nil {
+					s.Respond(w, r, http.StatusInternalServerError, err)
+					return
+				}
+				userid, _ = strconv.Atoi(txtid)
+				v := internalTypes.Values{M: map[string]string{
+					"Id":      txtid,
+					"Jid":     jid,
+					"Webhook": webhook,
+					"Token":   token,
+					"Events":  events,
+				}}
+
+				s.UserInfoCache.Set(token, v, cache.NoExpiration)
+				ctx = context.WithValue(r.Context(), "userinfo", v)
+			}
+		} else {
+			ctx = context.WithValue(r.Context(), "userinfo", myuserinfo)
+			userid, _ = strconv.Atoi(myuserinfo.(internalTypes.Values).Get("Id"))
+		}
+
+		if userid == 0 {
+			s.Respond(w, r, http.StatusUnauthorized, errors.New("Unauthorized"))
+			return
+		}
+		handler(w, r.WithContext(ctx))
+	}
+}
+
+func (s *Controller) authalice(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		var ctx context.Context
+		userid := 0
+		txtid := ""
+		webhook := ""
+		jid := ""
+		events := ""
+
+		// Get token from headers or uri parameters
+		token := r.Header.Get("token")
+		if token == "" {
+			token = strings.Join(r.URL.Query()["token"], "")
+		}
+
+		myuserinfo, found := s.UserInfoCache.Get(token)
+		if !found {
+			log.Info().Msg("Looking for user information in DB")
+			// Checks DB from matching user and store user values in context
+			rows, err := s.Db.Query("SELECT id,webhook,jid,events FROM users WHERE token=? LIMIT 1", token)
+			if err != nil {
+				s.Respond(w, r, http.StatusInternalServerError, err)
+				return
+			}
+			defer rows.Close()
+			for rows.Next() {
+				err = rows.Scan(&txtid, &webhook, &jid, &events)
+				if err != nil {
+					s.Respond(w, r, http.StatusInternalServerError, err)
+					return
+				}
+				userid, _ = strconv.Atoi(txtid)
+				v := internalTypes.Values{M: map[string]string{
+					"Id":      txtid,
+					"Jid":     jid,
+					"Webhook": webhook,
+					"Token":   token,
+					"Events":  events,
+				}}
+
+				s.UserInfoCache.Set(token, v, cache.NoExpiration)
+				ctx = context.WithValue(r.Context(), "userinfo", v)
+			}
+		} else {
+			ctx = context.WithValue(r.Context(), "userinfo", myuserinfo)
+			userid, _ = strconv.Atoi(myuserinfo.(internalTypes.Values).Get("Id"))
+		}
+
+		if userid == 0 {
+			s.Respond(w, r, http.StatusUnauthorized, errors.New("Unauthorized"))
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// Middleware: Authenticate connections based on Token header/uri parameter
+func (s *Controller) auth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		var ctx context.Context

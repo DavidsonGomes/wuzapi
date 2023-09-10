@@ -22,10 +22,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-type server struct {
-	*controllerBase.Controller
-}
-
 var (
 	address    = flag.String("address", "0.0.0.0", "Bind IP Address")
 	port       = flag.String("port", "8080", "Listen Port")
@@ -99,16 +95,15 @@ func main() {
 		panic(err)
 	}
 
-	s := &server{
-		&controllerBase.Controller{
-			Router: mux.NewRouter(),
-			Db:     db,
-			ExPath: exPath,
-		},
+	s := &controllerBase.Controller{
+		Router: mux.NewRouter(),
+		Db:     db,
+		ExPath: exPath,
 	}
-	s.routes()
+	
+	routes(s)
 
-	s.connectOnStartup()
+	s.ConnectOnStartup()
 
 	srv := &http.Server{
 		Addr:    *address + ":" + *port,
@@ -148,4 +143,40 @@ func main() {
 		os.Exit(1)
 	}
 	log.Info().Msg("Server Exited Properly")
+}
+
+func CreateAdminUser(db *sql.DB, token *string) {
+	tx, err := db.Begin()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Could not begin transaction")
+		os.Exit(1)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query("SELECT id FROM users WHERE name='admin' LIMIT 1")
+	if err != nil {
+		log.Fatal().Err(err).Msg("Could not query users table")
+		os.Exit(1)
+	}
+
+	if !rows.Next() {
+		sqlStmtInsert := fmt.Sprintf("INSERT INTO users (name, token) values ('admin', '%s')", *token)
+		_, err = tx.Exec(sqlStmtInsert)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Could not insert admin user")
+			os.Exit(1)
+		}
+	} else {
+		sqlStmtUpdate := fmt.Sprintf("UPDATE users SET token='%s' WHERE name='admin'", *token)
+		_, err = tx.Exec(sqlStmtUpdate)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Could not update admin user")
+			os.Exit(1)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Fatal().Err(err).Msg("Could not commit transaction")
+		os.Exit(1)
+	}
 }
