@@ -1,6 +1,7 @@
 package user
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,10 +22,166 @@ type UserController struct {
 }
 
 func (s *UserController) SignRoutes(c alice.Chain) {
+	s.Router.Handle("/user/create", c.Then(s.CreateUser())).Methods("POST")
+	s.Router.Handle("/user/delete", c.Then(s.DeleteUser())).Methods("POST")
+	s.Router.Handle("/user/fetch", c.Then(s.GetUserByToken())).Methods("POST")
 	s.Router.Handle("/user/info", c.Then(s.GetUser())).Methods("GET")
 	s.Router.Handle("/user/check", c.Then(s.CheckUser())).Methods("POST")
 	s.Router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")
 	s.Router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")
+}
+
+func (s *UserController) CreateUser() http.HandlerFunc {
+	type userStruct struct {
+		Name  string `json:"name" binding:"required"`
+		Token string `json:"token" binding:"required"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(r.Body)
+
+		var t userStruct
+		err := decoder.Decode(&t)
+		if err != nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not decode Payload"))
+			return
+		}
+
+		var userID int
+		err = s.Db.QueryRow("SELECT id FROM users WHERE token=? LIMIT 1", t.Token).Scan(&userID)
+		if err == nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("User already exists"))
+			return
+		} else if err != sql.ErrNoRows {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		result, err := s.Db.Exec("INSERT INTO users (name, token) VALUES (?, ?)", t.Name, t.Token)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		userIDInt64, err := result.LastInsertId()
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		userID = int(userIDInt64)
+
+		user := struct {
+			ID    int    `json:"id"`
+			Name  string `json:"name"`
+			Token string `json:"token"`
+		}{
+			ID:    userID,
+			Name:  t.Name,
+			Token: t.Token,
+		}
+
+		responseJSON, err := json.Marshal(user)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		s.Respond(w, r, http.StatusCreated, string(responseJSON))
+		return
+	}
+}
+
+func (s *UserController) DeleteUser() http.HandlerFunc {
+	type userStruct struct {
+		Token string `json:"token" binding:"required"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(r.Body)
+
+		var t userStruct
+		err := decoder.Decode(&t)
+		if err != nil {
+			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not decode Payload"))
+			return
+		}
+
+		rows, err := s.Db.Query("SELECT name FROM users WHERE token=? LIMIT 1", t.Token)
+		if err != nil {
+			rows.Close()
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		for rows.Next() {
+			var name string
+			err = rows.Scan(&name)
+			if err != nil {
+				rows.Close()
+				s.Respond(w, r, http.StatusInternalServerError, err)
+				return
+			}
+
+			if name == "admin" {
+				rows.Close()
+				s.Respond(w, r, http.StatusBadRequest, errors.New("Cannot delete admin user"))
+				return
+			}
+		}
+
+		_, err = s.Db.Query(fmt.Sprintf("delete from users where token='%s'", t.Token))
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		s.Respond(w, r, http.StatusOK, "User deleted")
+		return
+	}
+}
+
+func (s *UserController) GetUserByToken() http.HandlerFunc {
+	type userResponse struct {
+		ID      int    `json:"id"`
+		Name    string `json:"name"`
+		Token   string `json:"token"`
+		Webhook string `json:"webhook"`
+		Jid     string `json:"jid"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		decoder := json.NewDecoder(r.Body)
+
+		var t struct {
+			Token string `json:"token" binding:"required"`
+		}
+		if err := decoder.Decode(&t); err != nil {
+			s.Respond(w, r, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		var user userResponse
+		err := s.Db.QueryRow("SELECT id, name, token, webhook, jid FROM users WHERE token=? LIMIT 1", t.Token).Scan(
+			&user.ID, &user.Name, &user.Token, &user.Webhook, &user.Jid,
+		)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				s.Respond(w, r, http.StatusNotFound, "User not found")
+				return
+			}
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+
+		responseJSON, err := json.Marshal(user)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		s.Respond(w, r, http.StatusOK, string(responseJSON))
+	}
 }
 
 // checks if users/phones are on Whatsapp
