@@ -8,6 +8,7 @@ import (
 	"wuzapi/controllers/chat"
 	"wuzapi/controllers/group"
 	"wuzapi/controllers/session"
+	"wuzapi/controllers/user"
 	internalTypes "wuzapi/internal/types"
 
 	"github.com/justinas/alice"
@@ -63,13 +64,8 @@ func (s *server) routes() {
 	chatMessageController := &chat.ChatMessageController{Controller: s.Controller}
 	chatMessageController.SignRoutes(c)
 
-	s.Router.Handle("/user/create", c.Then(s.CreateUser())).Methods("POST")
-	s.Router.Handle("/user/delete", c.Then(s.DeleteUser())).Methods("POST")
-	s.Router.Handle("/user/fetch", c.Then(s.GetUserByToken())).Methods("POST")
-	s.Router.Handle("/user/info", c.Then(s.GetUser())).Methods("GET")
-	s.Router.Handle("/user/check", c.Then(s.CheckUser())).Methods("POST")
-	s.Router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")
-	s.Router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")
+	userController := &user.UserController{Controller: s.Controller}
+	userController.SignRoutes(c)
 
 	groupController := &group.GroupController{Controller: s.Controller}
 	groupController.SignRoutes(c)
