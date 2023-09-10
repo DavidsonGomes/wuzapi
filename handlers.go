@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"wuzapi/internal/helpers"
+	internalTypes "wuzapi/internal/types"
 	"wuzapi/message"
 
 	"github.com/patrickmn/go-cache"
@@ -21,14 +22,6 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
 )
-
-type Values struct {
-	m map[string]string
-}
-
-func (v Values) Get(key string) string {
-	return v.m[key]
-}
 
 var messageTypes = []string{"Message", "ReadReceipt", "Presence", "HistorySync", "ChatPresence", "All"}
 
@@ -65,7 +58,7 @@ func (s *server) authalice(next http.Handler) http.Handler {
 					return
 				}
 				userid, _ = strconv.Atoi(txtid)
-				v := Values{map[string]string{
+				v := internalTypes.Values{map[string]string{
 					"Id":      txtid,
 					"Jid":     jid,
 					"Webhook": webhook,
@@ -78,7 +71,7 @@ func (s *server) authalice(next http.Handler) http.Handler {
 			}
 		} else {
 			ctx = context.WithValue(r.Context(), "userinfo", myuserinfo)
-			userid, _ = strconv.Atoi(myuserinfo.(Values).Get("Id"))
+			userid, _ = strconv.Atoi(myuserinfo.(internalTypes.Values).Get("Id"))
 		}
 
 		if userid == 0 {
@@ -123,7 +116,7 @@ func (s *server) auth(handler http.HandlerFunc) http.HandlerFunc {
 					return
 				}
 				userid, _ = strconv.Atoi(txtid)
-				v := Values{map[string]string{
+				v := internalTypes.Values{map[string]string{
 					"Id":      txtid,
 					"Jid":     jid,
 					"Webhook": webhook,
@@ -136,7 +129,7 @@ func (s *server) auth(handler http.HandlerFunc) http.HandlerFunc {
 			}
 		} else {
 			ctx = context.WithValue(r.Context(), "userinfo", myuserinfo)
-			userid, _ = strconv.Atoi(myuserinfo.(Values).Get("Id"))
+			userid, _ = strconv.Atoi(myuserinfo.(internalTypes.Values).Get("Id"))
 		}
 
 		if userid == 0 {
@@ -157,10 +150,10 @@ func (s *server) Connect() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		webhook := r.Context().Value("userinfo").(Values).Get("Webhook")
-		jid := r.Context().Value("userinfo").(Values).Get("Jid")
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
+		webhook := r.Context().Value("userinfo").(internalTypes.Values).Get("Webhook")
+		jid := r.Context().Value("userinfo").(internalTypes.Values).Get("Jid")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
+		token := r.Context().Value("userinfo").(internalTypes.Values).Get("Token")
 		userid, _ := strconv.Atoi(txtid)
 		eventstring := ""
 
@@ -239,9 +232,9 @@ func (s *server) Connect() http.HandlerFunc {
 func (s *server) Disconnect() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		jid := r.Context().Value("userinfo").(Values).Get("Jid")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
+		jid := r.Context().Value("userinfo").(internalTypes.Values).Get("Jid")
+		token := r.Context().Value("userinfo").(internalTypes.Values).Get("Token")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -286,7 +279,7 @@ func (s *server) GetWebhook() http.HandlerFunc {
 
 		webhook := ""
 		events := ""
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 
 		rows, err := s.db.Query("SELECT webhook,events FROM users WHERE id=? LIMIT 1", txtid)
 		if err != nil {
@@ -327,8 +320,8 @@ func (s *server) SetWebhook() http.HandlerFunc {
 	}
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		token := r.Context().Value("userinfo").(Values).Get("Token")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
+		token := r.Context().Value("userinfo").(internalTypes.Values).Get("Token")
 		userid, _ := strconv.Atoi(txtid)
 
 		decoder := json.NewDecoder(r.Body)
@@ -364,7 +357,7 @@ func (s *server) SetWebhook() http.HandlerFunc {
 func (s *server) GetQR() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 		code := ""
 
@@ -416,8 +409,8 @@ func (s *server) GetQR() http.HandlerFunc {
 func (s *server) Logout() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
-		jid := r.Context().Value("userinfo").(Values).Get("Jid")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
+		jid := r.Context().Value("userinfo").(internalTypes.Values).Get("Jid")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -463,7 +456,7 @@ func (s *server) GetStatus() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -490,14 +483,14 @@ func (s *server) SendDocument() http.HandlerFunc {
 
 	type documentStruct struct {
 		message.Message
-		Document    string
-		FileName    string
-		Id          string
+		Document string
+		FileName string
+		Id       string
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 		msgid := ""
 		var resp whatsmeow.SendResponse
@@ -606,14 +599,14 @@ func (s *server) SendAudio() http.HandlerFunc {
 
 	type audioStruct struct {
 		message.Message
-		Audio       string
-		Caption     string
-		Id          string
+		Audio   string
+		Caption string
+		Id      string
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 		msgid := ""
 		var resp whatsmeow.SendResponse
@@ -721,14 +714,14 @@ func (s *server) SendImage() http.HandlerFunc {
 
 	type imageStruct struct {
 		message.Message
-		Image       string
-		Caption     string
-		Id          string
+		Image   string
+		Caption string
+		Id      string
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 		msgid := ""
 		var resp whatsmeow.SendResponse
@@ -839,7 +832,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 		msgid := ""
 		var resp whatsmeow.SendResponse
@@ -951,7 +944,7 @@ func (s *server) SendVideo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 		msgid := ""
 		var resp whatsmeow.SendResponse
@@ -1056,14 +1049,14 @@ func (s *server) SendContact() http.HandlerFunc {
 
 	type contactStruct struct {
 		message.Message
-		Id          string
-		Name        string
-		Vcard       string
+		Id    string
+		Name  string
+		Vcard string
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -1143,15 +1136,15 @@ func (s *server) SendLocation() http.HandlerFunc {
 
 	type locationStruct struct {
 		message.Message
-		Id          string
-		Name        string
-		Latitude    float64
-		Longitude   float64
+		Id        string
+		Name      string
+		Latitude  float64
+		Longitude float64
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -1244,7 +1237,7 @@ func (s *server) SendButtons() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -1360,7 +1353,7 @@ func (s *server) SendList() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -1479,13 +1472,13 @@ func (s *server) SendMessage() http.HandlerFunc {
 
 	type textStruct struct {
 		message.Message
-		Body        string
-		Id          string
+		Body string
+		Id   string
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -1584,7 +1577,7 @@ func (s *server) SendTemplate() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -1931,7 +1924,7 @@ func (s *server) CheckUser() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -1991,7 +1984,7 @@ func (s *server) GetUser() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2056,7 +2049,7 @@ func (s *server) GetAvatar() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2119,7 +2112,7 @@ func (s *server) GetContacts() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2156,7 +2149,7 @@ func (s *server) ChatPresence() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2220,7 +2213,7 @@ func (s *server) DownloadImage() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		mimetype := ""
@@ -2300,7 +2293,7 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		mimetype := ""
@@ -2380,7 +2373,7 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		mimetype := ""
@@ -2460,7 +2453,7 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		mimetype := ""
@@ -2536,7 +2529,7 @@ func (s *server) React() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2632,7 +2625,7 @@ func (s *server) MarkRead() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2684,7 +2677,7 @@ func (s *server) ListGroups() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2726,7 +2719,7 @@ func (s *server) GetGroupInfo() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2779,7 +2772,7 @@ func (s *server) GetGroupInviteLink() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2833,7 +2826,7 @@ func (s *server) SetGroupPhoto() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {
@@ -2907,7 +2900,7 @@ func (s *server) SetGroupName() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		txtid := r.Context().Value("userinfo").(Values).Get("Id")
+		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 		userid, _ := strconv.Atoi(txtid)
 
 		if clientPointer[userid] == nil {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	internalTypes "wuzapi/internal/types"
 
 	"github.com/justinas/alice"
 	"github.com/rs/zerolog"
@@ -39,7 +40,7 @@ func (s *server) routes() {
 			Int("status", status).
 			Int("size", size).
 			Dur("duration", duration).
-			Str("userid", r.Context().Value("userinfo").(Values).Get("Id")).
+			Str("userid", r.Context().Value("userinfo").(internalTypes.Values).Get("Id")).
 			Msg("Got API Request")
 	}))
 	c = c.Append(hlog.RemoteAddrHandler("ip"))

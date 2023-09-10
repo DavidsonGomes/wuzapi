@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 	"wuzapi/internal/helpers"
+	internalTypes "wuzapi/internal/types"
 	"wuzapi/webhook"
 
 	"github.com/go-resty/resty/v2"
@@ -69,7 +70,7 @@ func (s *server) connectOnStartup() {
 			return
 		} else {
 			log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
-			v := Values{map[string]string{
+			v := internalTypes.Values{map[string]string{
 				"Id":      txtid,
 				"Jid":     jid,
 				"Webhook": webhook,
@@ -327,8 +328,8 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if !found {
 			log.Warn().Msg("No user info cached on pairing?")
 		} else {
-			txtid := myuserinfo.(Values).Get("Id")
-			token := myuserinfo.(Values).Get("Token")
+			txtid := myuserinfo.(internalTypes.Values).Get("Id")
+			token := myuserinfo.(internalTypes.Values).Get("Token")
 			v := updateUserInfo(myuserinfo, "Jid", fmt.Sprintf("%s", jid))
 			userinfocache.Set(token, v, cache.NoExpiration)
 			log.Info().Str("jid", jid.String()).Str("userid", txtid).Str("token", token).Msg("User information set")
@@ -549,7 +550,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if !found {
 			log.Warn().Str("token", mycli.token).Msg("Could not call webhook as there is no user for this token")
 		} else {
-			webhookurl = myuserinfo.(Values).Get("Webhook")
+			webhookurl = myuserinfo.(internalTypes.Values).Get("Webhook")
 		}
 
 		if !Find(mycli.subscriptions, postmap["type"].(string)) && !Find(mycli.subscriptions, "All") {
