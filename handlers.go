@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"wuzapi/message"
 
 	"github.com/patrickmn/go-cache"
 	"github.com/vincent-petithory/dataurl"
@@ -487,11 +488,10 @@ func (s *server) GetStatus() http.HandlerFunc {
 func (s *server) SendDocument() http.HandlerFunc {
 
 	type documentStruct struct {
-		Phone       string
+		message.Message
 		Document    string
 		FileName    string
 		Id          string
-		ContextInfo waProto.ContextInfo
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -529,7 +529,7 @@ func (s *server) SendDocument() http.HandlerFunc {
 			return
 		}
 
-		recipient, err := validateMessageFields(t.Phone, t.ContextInfo.StanzaId, t.ContextInfo.Participant)
+		recipient, err := t.ValidateMessageFields()
 		if err != nil {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, err)
@@ -604,11 +604,10 @@ func (s *server) SendDocument() http.HandlerFunc {
 func (s *server) SendAudio() http.HandlerFunc {
 
 	type audioStruct struct {
-		Phone       string
+		message.Message
 		Audio       string
 		Caption     string
 		Id          string
-		ContextInfo waProto.ContextInfo
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -641,7 +640,7 @@ func (s *server) SendAudio() http.HandlerFunc {
 			return
 		}
 
-		recipient, err := validateMessageFields(t.Phone, t.ContextInfo.StanzaId, t.ContextInfo.Participant)
+		recipient, err := t.ValidateMessageFields()
 		if err != nil {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, err)
@@ -720,11 +719,10 @@ func (s *server) SendAudio() http.HandlerFunc {
 func (s *server) SendImage() http.HandlerFunc {
 
 	type imageStruct struct {
-		Phone       string
+		message.Message
 		Image       string
 		Caption     string
 		Id          string
-		ContextInfo waProto.ContextInfo
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -757,7 +755,7 @@ func (s *server) SendImage() http.HandlerFunc {
 			return
 		}
 
-		recipient, err := validateMessageFields(t.Phone, t.ContextInfo.StanzaId, t.ContextInfo.Participant)
+		recipient, err := t.ValidateMessageFields()
 		if err != nil {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, err)
@@ -832,11 +830,10 @@ func (s *server) SendImage() http.HandlerFunc {
 func (s *server) SendSticker() http.HandlerFunc {
 
 	type stickerStruct struct {
-		Phone        string
+		message.Message
 		Sticker      string
 		Id           string
 		PngThumbnail []byte
-		ContextInfo  waProto.ContextInfo
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -869,7 +866,7 @@ func (s *server) SendSticker() http.HandlerFunc {
 			return
 		}
 
-		recipient, err := validateMessageFields(t.Phone, t.ContextInfo.StanzaId, t.ContextInfo.Participant)
+		recipient, err := t.ValidateMessageFields()
 		if err != nil {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, err)
@@ -944,12 +941,11 @@ func (s *server) SendSticker() http.HandlerFunc {
 func (s *server) SendVideo() http.HandlerFunc {
 
 	type imageStruct struct {
-		Phone         string
+		message.Message
 		Video         string
 		Caption       string
 		Id            string
 		JpegThumbnail []byte
-		ContextInfo   waProto.ContextInfo
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -982,7 +978,7 @@ func (s *server) SendVideo() http.HandlerFunc {
 			return
 		}
 
-		recipient, err := validateMessageFields(t.Phone, t.ContextInfo.StanzaId, t.ContextInfo.Participant)
+		recipient, err := t.ValidateMessageFields()
 		if err != nil {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, err)
@@ -1058,11 +1054,10 @@ func (s *server) SendVideo() http.HandlerFunc {
 func (s *server) SendContact() http.HandlerFunc {
 
 	type contactStruct struct {
-		Phone       string
+		message.Message
 		Id          string
 		Name        string
 		Vcard       string
-		ContextInfo waProto.ContextInfo
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -1098,7 +1093,7 @@ func (s *server) SendContact() http.HandlerFunc {
 			return
 		}
 
-		recipient, err := validateMessageFields(t.Phone, t.ContextInfo.StanzaId, t.ContextInfo.Participant)
+		recipient, err := t.ValidateMessageFields()
 		if err != nil {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, err)
@@ -1146,12 +1141,11 @@ func (s *server) SendContact() http.HandlerFunc {
 func (s *server) SendLocation() http.HandlerFunc {
 
 	type locationStruct struct {
-		Phone       string
+		message.Message
 		Id          string
 		Name        string
 		Latitude    float64
 		Longitude   float64
-		ContextInfo waProto.ContextInfo
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -1187,7 +1181,7 @@ func (s *server) SendLocation() http.HandlerFunc {
 			return
 		}
 
-		recipient, err := validateMessageFields(t.Phone, t.ContextInfo.StanzaId, t.ContextInfo.Participant)
+		recipient, err := t.ValidateMessageFields()
 		if err != nil {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, err)
@@ -1483,10 +1477,9 @@ func (s *server) SendList() http.HandlerFunc {
 func (s *server) SendMessage() http.HandlerFunc {
 
 	type textStruct struct {
-		Phone       string
+		message.Message
 		Body        string
 		Id          string
-		ContextInfo waProto.ContextInfo
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -1520,7 +1513,7 @@ func (s *server) SendMessage() http.HandlerFunc {
 			return
 		}
 
-		recipient, err := validateMessageFields(t.Phone, t.ContextInfo.StanzaId, t.ContextInfo.Participant)
+		recipient, err := t.ValidateMessageFields()
 		if err != nil {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, err)
@@ -2985,26 +2978,4 @@ func (s *server) Respond(w http.ResponseWriter, r *http.Request, status int, dat
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		panic("respond: " + err.Error())
 	}
-}
-
-func validateMessageFields(phone string, stanzaid *string, participant *string) (types.JID, error) {
-
-	recipient, ok := parseJID(phone)
-	if !ok {
-		return types.NewJID("", types.DefaultUserServer), errors.New("Could not parse Phone")
-	}
-
-	if stanzaid != nil {
-		if participant == nil {
-			return types.NewJID("", types.DefaultUserServer), errors.New("Missing Participant in ContextInfo")
-		}
-	}
-
-	if participant != nil {
-		if stanzaid == nil {
-			return types.NewJID("", types.DefaultUserServer), errors.New("Missing StanzaId in ContextInfo")
-		}
-	}
-
-	return recipient, nil
 }
