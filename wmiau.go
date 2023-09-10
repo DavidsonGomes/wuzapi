@@ -35,7 +35,7 @@ var historySyncID int32
 
 // Connects to Whatsapp Websocket on server startup if last state was connected
 func (s *server) connectOnStartup() {
-	rows, err := s.db.Query("SELECT id,token,jid,webhook,events FROM users WHERE connected=1")
+	rows, err := s.Db.Query("SELECT id,token,jid,webhook,events FROM users WHERE connected=1")
 	if err != nil {
 		log.Error().Err(err).Msg("DB Problem")
 		return
@@ -171,7 +171,7 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 		UserID:         userID,
 		Token:          token,
 		Subscriptions:  subscriptions,
-		Db:             s.db,
+		Db:             s.Db,
 		UserInfoCache:  userinfocache,
 		KillChannel:    killchannel,
 		ClientHttp:     clientHttp,
@@ -211,14 +211,14 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 					image, _ := qrcode.Encode(evt.Code, qrcode.Medium, 256)
 					base64qrcode := "data:image/png;base64," + base64.StdEncoding.EncodeToString(image)
 					sqlStmt := `UPDATE users SET qrcode=? WHERE id=?`
-					_, err := s.db.Exec(sqlStmt, base64qrcode, userID)
+					_, err := s.Db.Exec(sqlStmt, base64qrcode, userID)
 					if err != nil {
 						log.Error().Err(err).Msg(sqlStmt)
 					}
 				} else if evt.Event == "timeout" {
 					// Clear QR code from DB on timeout
 					sqlStmt := `UPDATE users SET qrcode=? WHERE id=?`
-					_, err := s.db.Exec(sqlStmt, "", userID)
+					_, err := s.Db.Exec(sqlStmt, "", userID)
 					if err != nil {
 						log.Error().Err(err).Msg(sqlStmt)
 					}
@@ -229,7 +229,7 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 					log.Info().Msg("QR pairing ok!")
 					// Clear QR code after pairing
 					sqlStmt := `UPDATE users SET qrcode=? WHERE id=?`
-					_, err := s.db.Exec(sqlStmt, "", userID)
+					_, err := s.Db.Exec(sqlStmt, "", userID)
 					if err != nil {
 						log.Error().Err(err).Msg(sqlStmt)
 					}
@@ -256,7 +256,7 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 			client.Disconnect()
 			delete(clientPointer, userID)
 			sqlStmt := `UPDATE users SET connected=0 WHERE id=?`
-			_, err := s.db.Exec(sqlStmt, userID)
+			_, err := s.Db.Exec(sqlStmt, userID)
 			if err != nil {
 				log.Error().Err(err).Msg(sqlStmt)
 			}

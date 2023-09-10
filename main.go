@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+	controllerBase "wuzapi/controllers/controller_base"
 
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -22,9 +23,7 @@ import (
 )
 
 type server struct {
-	db     *sql.DB
-	router *mux.Router
-	exPath string
+	controllerBase.Controller
 }
 
 var (
@@ -101,9 +100,11 @@ func main() {
 	}
 
 	s := &server{
-		router: mux.NewRouter(),
-		db:     db,
-		exPath: exPath,
+		controllerBase.Controller{
+			Router: mux.NewRouter(),
+			Db:     db,
+			ExPath: exPath,
+		},
 	}
 	s.routes()
 
@@ -111,7 +112,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    *address + ":" + *port,
-		Handler: s.router,
+		Handler: s.Router,
 	}
 
 	done := make(chan os.Signal, 1)

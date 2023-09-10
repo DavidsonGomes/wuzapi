@@ -45,7 +45,7 @@ func (s *server) authalice(next http.Handler) http.Handler {
 		if !found {
 			log.Info().Msg("Looking for user information in DB")
 			// Checks DB from matching user and store user values in context
-			rows, err := s.db.Query("SELECT id,webhook,jid,events FROM users WHERE token=? LIMIT 1", token)
+			rows, err := s.Db.Query("SELECT id,webhook,jid,events FROM users WHERE token=? LIMIT 1", token)
 			if err != nil {
 				s.Respond(w, r, http.StatusInternalServerError, err)
 				return
@@ -103,7 +103,7 @@ func (s *server) auth(handler http.HandlerFunc) http.HandlerFunc {
 		if !found {
 			log.Info().Msg("Looking for user information in DB")
 			// Checks DB from matching user and store user values in context
-			rows, err := s.db.Query("SELECT id,webhook,jid,events FROM users WHERE token=? LIMIT 1", token)
+			rows, err := s.Db.Query("SELECT id,webhook,jid,events FROM users WHERE token=? LIMIT 1", token)
 			if err != nil {
 				s.Respond(w, r, http.StatusInternalServerError, err)
 				return
@@ -188,7 +188,7 @@ func (s *server) Connect() http.HandlerFunc {
 				}
 			}
 			eventstring = strings.Join(subscribedEvents, ",")
-			_, err = s.db.Exec("UPDATE users SET events=? WHERE id=?", eventstring, userid)
+			_, err = s.Db.Exec("UPDATE users SET events=? WHERE id=?", eventstring, userid)
 			if err != nil {
 				log.Warn().Msg("Could not set events in users table")
 			}
@@ -245,7 +245,7 @@ func (s *server) Disconnect() http.HandlerFunc {
 			if clientPointer[userid].IsLoggedIn() == true {
 				log.Info().Str("jid", jid).Msg("Disconnection successfull")
 				killchannel[userid] <- true
-				_, err := s.db.Exec("UPDATE users SET events=? WHERE id=?", "", userid)
+				_, err := s.Db.Exec("UPDATE users SET events=? WHERE id=?", "", userid)
 				if err != nil {
 					log.Warn().Str("userid", txtid).Msg("Could not set events in users table")
 				}
@@ -281,7 +281,7 @@ func (s *server) GetWebhook() http.HandlerFunc {
 		events := ""
 		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
 
-		rows, err := s.db.Query("SELECT webhook,events FROM users WHERE id=? LIMIT 1", txtid)
+		rows, err := s.Db.Query("SELECT webhook,events FROM users WHERE id=? LIMIT 1", txtid)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("Could not get webhook: %v", err)))
 			return
@@ -333,7 +333,7 @@ func (s *server) SetWebhook() http.HandlerFunc {
 		}
 		var webhook = t.WebhookURL
 
-		_, err = s.db.Exec("UPDATE users SET webhook=? WHERE id=?", webhook, userid)
+		_, err = s.Db.Exec("UPDATE users SET webhook=? WHERE id=?", webhook, userid)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New(fmt.Sprintf("%s", err)))
 			return
@@ -369,7 +369,7 @@ func (s *server) GetQR() http.HandlerFunc {
 				s.Respond(w, r, http.StatusInternalServerError, errors.New("Not connected"))
 				return
 			}
-			rows, err := s.db.Query("SELECT qrcode AS code FROM users WHERE id=? LIMIT 1", userid)
+			rows, err := s.Db.Query("SELECT qrcode AS code FROM users WHERE id=? LIMIT 1", userid)
 			if err != nil {
 				s.Respond(w, r, http.StatusInternalServerError, err)
 				return
@@ -1768,7 +1768,7 @@ func (s *server) CreateUser() http.HandlerFunc {
 		}
 
 		var userID int
-		err = s.db.QueryRow("SELECT id FROM users WHERE token=? LIMIT 1", t.Token).Scan(&userID)
+		err = s.Db.QueryRow("SELECT id FROM users WHERE token=? LIMIT 1", t.Token).Scan(&userID)
 		if err == nil {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("User already exists"))
 			return
@@ -1777,7 +1777,7 @@ func (s *server) CreateUser() http.HandlerFunc {
 			return
 		}
 
-		result, err := s.db.Exec("INSERT INTO users (name, token) VALUES (?, ?)", t.Name, t.Token)
+		result, err := s.Db.Exec("INSERT INTO users (name, token) VALUES (?, ?)", t.Name, t.Token)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 			return
@@ -1827,7 +1827,7 @@ func (s *server) DeleteUser() http.HandlerFunc {
 			return
 		}
 
-		rows, err := s.db.Query("SELECT name FROM users WHERE token=? LIMIT 1", t.Token)
+		rows, err := s.Db.Query("SELECT name FROM users WHERE token=? LIMIT 1", t.Token)
 		if err != nil {
 			rows.Close()
 			s.Respond(w, r, http.StatusInternalServerError, err)
@@ -1850,7 +1850,7 @@ func (s *server) DeleteUser() http.HandlerFunc {
 			}
 		}
 
-		_, err = s.db.Query(fmt.Sprintf("delete from users where token='%s'", t.Token))
+		_, err = s.Db.Query(fmt.Sprintf("delete from users where token='%s'", t.Token))
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 			return
@@ -1882,7 +1882,7 @@ func (s *server) GetUserByToken() http.HandlerFunc {
 		}
 
 		var user userResponse
-		err := s.db.QueryRow("SELECT id, name, token, webhook, jid FROM users WHERE token=? LIMIT 1", t.Token).Scan(
+		err := s.Db.QueryRow("SELECT id, name, token, webhook, jid FROM users WHERE token=? LIMIT 1", t.Token).Scan(
 			&user.ID, &user.Name, &user.Token, &user.Webhook, &user.Jid,
 		)
 		if err != nil {
@@ -2225,7 +2225,7 @@ func (s *server) DownloadImage() http.HandlerFunc {
 		}
 
 		// check/creates user directory for files
-		userDirectory := fmt.Sprintf("%s/files/user_%s", s.exPath, txtid)
+		userDirectory := fmt.Sprintf("%s/files/user_%s", s.ExPath, txtid)
 		_, err := os.Stat(userDirectory)
 		if os.IsNotExist(err) {
 			errDir := os.MkdirAll(userDirectory, 0751)
@@ -2305,7 +2305,7 @@ func (s *server) DownloadDocument() http.HandlerFunc {
 		}
 
 		// check/creates user directory for files
-		userDirectory := fmt.Sprintf("%s/files/user_%s", s.exPath, txtid)
+		userDirectory := fmt.Sprintf("%s/files/user_%s", s.ExPath, txtid)
 		_, err := os.Stat(userDirectory)
 		if os.IsNotExist(err) {
 			errDir := os.MkdirAll(userDirectory, 0751)
@@ -2385,7 +2385,7 @@ func (s *server) DownloadVideo() http.HandlerFunc {
 		}
 
 		// check/creates user directory for files
-		userDirectory := fmt.Sprintf("%s/files/user_%s", s.exPath, txtid)
+		userDirectory := fmt.Sprintf("%s/files/user_%s", s.ExPath, txtid)
 		_, err := os.Stat(userDirectory)
 		if os.IsNotExist(err) {
 			errDir := os.MkdirAll(userDirectory, 0751)
@@ -2465,7 +2465,7 @@ func (s *server) DownloadAudio() http.HandlerFunc {
 		}
 
 		// check/creates user directory for files
-		userDirectory := fmt.Sprintf("%s/files/user_%s", s.exPath, txtid)
+		userDirectory := fmt.Sprintf("%s/files/user_%s", s.ExPath, txtid)
 		_, err := os.Stat(userDirectory)
 		if os.IsNotExist(err) {
 			errDir := os.MkdirAll(userDirectory, 0751)
