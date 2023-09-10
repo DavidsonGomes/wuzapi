@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 	"wuzapi/controllers/chat"
+	"wuzapi/controllers/group"
 	internalTypes "wuzapi/internal/types"
 
 	"github.com/justinas/alice"
@@ -58,10 +59,10 @@ func (s *server) routes() {
 	s.Router.Handle("/webhook", c.Then(s.SetWebhook())).Methods("POST")
 	s.Router.Handle("/webhook", c.Then(s.GetWebhook())).Methods("GET")
 
-	chatController := &chat.ChatController{Controller: &s.Controller}
+	chatController := &chat.ChatController{Controller: s.Controller}
 	chatController.SignRoutes(c)
 
-	chatMessageController := &chat.ChatMessageController{Controller: &s.Controller}
+	chatMessageController := &chat.ChatMessageController{Controller: s.Controller}
 	chatMessageController.SignRoutes(c)
 
 	s.Router.Handle("/user/create", c.Then(s.CreateUser())).Methods("POST")
@@ -72,11 +73,8 @@ func (s *server) routes() {
 	s.Router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")
 	s.Router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")
 
-	s.Router.Handle("/group/list", c.Then(s.ListGroups())).Methods("GET")
-	s.Router.Handle("/group/info", c.Then(s.GetGroupInfo())).Methods("GET")
-	s.Router.Handle("/group/invitelink", c.Then(s.GetGroupInviteLink())).Methods("GET")
-	s.Router.Handle("/group/photo", c.Then(s.SetGroupPhoto())).Methods("POST")
-	s.Router.Handle("/group/name", c.Then(s.SetGroupName())).Methods("POST")
+	groupController := &group.GroupController{Controller: s.Controller}
+	groupController.SignRoutes(c)
 
 	s.Router.PathPrefix("/").Handler(http.FileServer(http.Dir(exPath + "/static/")))
 }

@@ -23,7 +23,7 @@ import (
 )
 
 type server struct {
-	controllerBase.Controller
+	*controllerBase.Controller
 }
 
 var (
@@ -100,7 +100,7 @@ func main() {
 	}
 
 	s := &server{
-		controllerBase.Controller{
+		&controllerBase.Controller{
 			Router: mux.NewRouter(),
 			Db:     db,
 			ExPath: exPath,
