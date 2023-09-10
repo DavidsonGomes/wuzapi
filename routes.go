@@ -7,6 +7,7 @@ import (
 	"time"
 	"wuzapi/controllers/chat"
 	"wuzapi/controllers/group"
+	"wuzapi/controllers/session"
 	internalTypes "wuzapi/internal/types"
 
 	"github.com/justinas/alice"
@@ -50,11 +51,8 @@ func (s *server) routes() {
 	c = c.Append(hlog.RefererHandler("referer"))
 	c = c.Append(hlog.RequestIDHandler("req_id", "Request-Id"))
 
-	s.Router.Handle("/session/connect", c.Then(s.Connect())).Methods("POST")
-	s.Router.Handle("/session/disconnect", c.Then(s.Disconnect())).Methods("POST")
-	s.Router.Handle("/session/logout", c.Then(s.Logout())).Methods("POST")
-	s.Router.Handle("/session/status", c.Then(s.GetStatus())).Methods("GET")
-	s.Router.Handle("/session/qr", c.Then(s.GetQR())).Methods("GET")
+	sessionController := &session.SessionController{Controller: s.Controller}
+	sessionController.SignRoutes(c)
 
 	s.Router.Handle("/webhook", c.Then(s.SetWebhook())).Methods("POST")
 	s.Router.Handle("/webhook", c.Then(s.GetWebhook())).Methods("GET")
