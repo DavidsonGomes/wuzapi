@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"wuzapi/internal/helpers"
 	"wuzapi/message"
 
 	"github.com/patrickmn/go-cache"
@@ -1281,7 +1282,7 @@ func (s *server) SendButtons() http.HandlerFunc {
 			return
 		}
 
-		recipient, ok := parseJID(t.Phone)
+		recipient, ok := helpers.ParseJID(t.Phone)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not parse Phone"))
 			return
@@ -1405,7 +1406,7 @@ func (s *server) SendList() http.HandlerFunc {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("missing Sections in Payload"))
 			return
 		}
-		recipient, ok := parseJID(t.Phone)
+		recipient, ok := helpers.ParseJID(t.Phone)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("could not parse Phone"))
 			return
@@ -1623,7 +1624,7 @@ func (s *server) SendTemplate() http.HandlerFunc {
 			return
 		}
 
-		recipient, ok := parseJID(t.Phone)
+		recipient, ok := helpers.ParseJID(t.Phone)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not parse Phone"))
 			return
@@ -2013,7 +2014,7 @@ func (s *server) GetUser() http.HandlerFunc {
 
 		var jids []types.JID
 		for _, arg := range t.Phone {
-			jid, ok := parseJID(arg)
+			jid, ok := helpers.ParseJID(arg)
 			if !ok {
 				return
 			}
@@ -2076,7 +2077,7 @@ func (s *server) GetAvatar() http.HandlerFunc {
 			return
 		}
 
-		jid, ok := parseJID(t.Phone)
+		jid, ok := helpers.ParseJID(t.Phone)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not parse Phone"))
 			return
@@ -2181,7 +2182,7 @@ func (s *server) ChatPresence() http.HandlerFunc {
 			return
 		}
 
-		jid, ok := parseJID(t.Phone)
+		jid, ok := helpers.ParseJID(t.Phone)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not parse Phone"))
 			return
@@ -2564,7 +2565,7 @@ func (s *server) React() http.HandlerFunc {
 			return
 		}
 
-		recipient, ok := parseJID(t.Phone)
+		recipient, ok := helpers.ParseJID(t.Phone)
 		if !ok {
 			log.Error().Msg(fmt.Sprintf("%s", err))
 			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not parse Group JID"))
@@ -2741,7 +2742,7 @@ func (s *server) GetGroupInfo() http.HandlerFunc {
 			return
 		}
 
-		group, ok := parseJID(t.GroupJID)
+		group, ok := helpers.ParseJID(t.GroupJID)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not parse Group JID"))
 			return
@@ -2794,7 +2795,7 @@ func (s *server) GetGroupInviteLink() http.HandlerFunc {
 			return
 		}
 
-		group, ok := parseJID(t.GroupJID)
+		group, ok := helpers.ParseJID(t.GroupJID)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not parse Group JID"))
 			return
@@ -2848,7 +2849,7 @@ func (s *server) SetGroupPhoto() http.HandlerFunc {
 			return
 		}
 
-		group, ok := parseJID(t.GroupJID)
+		group, ok := helpers.ParseJID(t.GroupJID)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not parse Group JID"))
 			return
@@ -2922,7 +2923,7 @@ func (s *server) SetGroupName() http.HandlerFunc {
 			return
 		}
 
-		group, ok := parseJID(t.GroupJID)
+		group, ok := helpers.ParseJID(t.GroupJID)
 		if !ok {
 			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not parse Group JID"))
 			return

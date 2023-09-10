@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"wuzapi/internal/helpers"
 	"wuzapi/webhook"
 
 	"github.com/go-resty/resty/v2"
@@ -108,46 +109,6 @@ func (s *server) connectOnStartup() {
 	}
 }
 
-func parseJID(arg string) (types.JID, bool) {
-	if arg == "" {
-		return types.NewJID("", types.DefaultUserServer), false
-	}
-	if arg[0] == '+' {
-		arg = arg[1:]
-	}
-
-	// Basic only digit check for recipient phone number, we want to remove @server and .session
-	phonenumber := ""
-	phonenumber = strings.Split(arg, "@")[0]
-	phonenumber = strings.Split(phonenumber, ".")[0]
-	b := true
-	for _, c := range phonenumber {
-		if c < '0' || c > '9' {
-			b = false
-			break
-		}
-	}
-	if b == false {
-		log.Warn().Msg("Bad jid format, return empty")
-		recipient, _ := types.ParseJID("")
-		return recipient, false
-	}
-
-	if !strings.ContainsRune(arg, '@') {
-		return types.NewJID(arg, types.DefaultUserServer), true
-	} else {
-		recipient, err := types.ParseJID(arg)
-		if err != nil {
-			log.Error().Err(err).Str("jid", arg).Msg("Invalid jid")
-			return recipient, false
-		} else if recipient.User == "" {
-			log.Error().Err(err).Str("jid", arg).Msg("Invalid jid. No server specified")
-			return recipient, false
-		}
-		return recipient, true
-	}
-}
-
 func (s *server) startClient(userID int, textjid string, token string, subscriptions []string) {
 
 	log.Info().Str("userid", strconv.Itoa(userID)).Str("jid", textjid).Msg("Starting websocket connection to Whatsapp")
@@ -187,7 +148,7 @@ func (s *server) startClient(userID int, textjid string, token string, subscript
 	*/
 
 	if textjid != "" {
-		jid, _ := parseJID(textjid)
+		jid, _ := helpers.ParseJID(textjid)
 		// If you want multiple sessions, remember their JIDs and use .GetDevice(jid) or .GetAllDevices() instead.
 		//deviceStore, err := container.GetFirstDevice()
 		deviceStore, err = container.GetDevice(jid)
