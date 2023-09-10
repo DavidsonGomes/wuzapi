@@ -70,7 +70,7 @@ func (s *server) connectOnStartup() {
 			return
 		} else {
 			log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
-			v := internalTypes.Values{map[string]string{
+			v := internalTypes.Values{M: map[string]string{
 				"Id":      txtid,
 				"Jid":     jid,
 				"Webhook": webhook,
@@ -84,16 +84,16 @@ func (s *server) connectOnStartup() {
 
 			var subscribedEvents []string
 			if len(eventarray) < 1 {
-				if !Find(subscribedEvents, "All") {
+				if !helpers.Find(subscribedEvents, "All") {
 					subscribedEvents = append(subscribedEvents, "All")
 				}
 			} else {
 				for _, arg := range eventarray {
-					if !Find(messageTypes, arg) {
+					if !helpers.Find(messageTypes, arg) {
 						log.Warn().Str("Type", arg).Msg("Message type discarded")
 						continue
 					}
-					if !Find(subscribedEvents, arg) {
+					if !helpers.Find(subscribedEvents, arg) {
 						subscribedEvents = append(subscribedEvents, arg)
 					}
 				}
@@ -330,7 +330,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		} else {
 			txtid := myuserinfo.(internalTypes.Values).Get("Id")
 			token := myuserinfo.(internalTypes.Values).Get("Token")
-			v := updateUserInfo(myuserinfo, "Jid", fmt.Sprintf("%s", jid))
+			v := helpers.UpdateUserInfo(myuserinfo, "Jid", fmt.Sprintf("%s", jid))
 			userinfocache.Set(token, v, cache.NoExpiration)
 			log.Info().Str("jid", jid.String()).Str("userid", txtid).Str("token", token).Msg("User information set")
 		}
@@ -553,7 +553,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			webhookurl = myuserinfo.(internalTypes.Values).Get("Webhook")
 		}
 
-		if !Find(mycli.subscriptions, postmap["type"].(string)) && !Find(mycli.subscriptions, "All") {
+		if !helpers.Find(mycli.subscriptions, postmap["type"].(string)) && !helpers.Find(mycli.subscriptions, "All") {
 			log.Warn().Str("type", postmap["type"].(string)).Msg("Skipping webhook. Not subscribed for this type")
 			return
 		}

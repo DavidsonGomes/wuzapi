@@ -58,7 +58,7 @@ func (s *server) authalice(next http.Handler) http.Handler {
 					return
 				}
 				userid, _ = strconv.Atoi(txtid)
-				v := internalTypes.Values{map[string]string{
+				v := internalTypes.Values{M: map[string]string{
 					"Id":      txtid,
 					"Jid":     jid,
 					"Webhook": webhook,
@@ -116,7 +116,7 @@ func (s *server) auth(handler http.HandlerFunc) http.HandlerFunc {
 					return
 				}
 				userid, _ = strconv.Atoi(txtid)
-				v := internalTypes.Values{map[string]string{
+				v := internalTypes.Values{M: map[string]string{
 					"Id":      txtid,
 					"Jid":     jid,
 					"Webhook": webhook,
@@ -173,16 +173,16 @@ func (s *server) Connect() http.HandlerFunc {
 
 			var subscribedEvents []string
 			if len(t.Subscribe) < 1 {
-				if !Find(subscribedEvents, "All") {
+				if !helpers.Find(subscribedEvents, "All") {
 					subscribedEvents = append(subscribedEvents, "All")
 				}
 			} else {
 				for _, arg := range t.Subscribe {
-					if !Find(messageTypes, arg) {
+					if !helpers.Find(messageTypes, arg) {
 						log.Warn().Str("Type", arg).Msg("Message type discarded")
 						continue
 					}
-					if !Find(subscribedEvents, arg) {
+					if !helpers.Find(subscribedEvents, arg) {
 						subscribedEvents = append(subscribedEvents, arg)
 					}
 				}
@@ -193,7 +193,7 @@ func (s *server) Connect() http.HandlerFunc {
 				log.Warn().Msg("Could not set events in users table")
 			}
 			log.Info().Str("events", eventstring).Msg("Setting subscribed events")
-			v := updateUserInfo(r.Context().Value("userinfo"), "Events", eventstring)
+			v := helpers.UpdateUserInfo(r.Context().Value("userinfo"), "Events", eventstring)
 			userinfocache.Set(token, v, cache.NoExpiration)
 
 			log.Info().Str("jid", jid).Msg("Attempt to connect")
@@ -249,7 +249,7 @@ func (s *server) Disconnect() http.HandlerFunc {
 				if err != nil {
 					log.Warn().Str("userid", txtid).Msg("Could not set events in users table")
 				}
-				v := updateUserInfo(r.Context().Value("userinfo"), "Events", "")
+				v := helpers.UpdateUserInfo(r.Context().Value("userinfo"), "Events", "")
 				userinfocache.Set(token, v, cache.NoExpiration)
 
 				response := map[string]interface{}{"Details": "Disconnected"}
@@ -339,7 +339,7 @@ func (s *server) SetWebhook() http.HandlerFunc {
 			return
 		}
 
-		v := updateUserInfo(r.Context().Value("userinfo"), "Webhook", webhook)
+		v := helpers.UpdateUserInfo(r.Context().Value("userinfo"), "Webhook", webhook)
 		userinfocache.Set(token, v, cache.NoExpiration)
 
 		response := map[string]interface{}{"webhook": webhook}
