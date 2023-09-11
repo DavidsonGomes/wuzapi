@@ -13,9 +13,11 @@ import (
 	"time"
 	controllerBase "wuzapi/controllers/controller_base"
 
+	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/gorilla/mux"
 	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog"
@@ -96,11 +98,18 @@ func main() {
 	}
 
 	s := &controllerBase.Controller{
-		Router: mux.NewRouter(),
-		Db:     db,
-		ExPath: exPath,
+		Router:        mux.NewRouter(),
+		Db:            db,
+		ExPath:        exPath,
+		UserInfoCache: userinfocache,
+		KillChannel:   killchannel,
+		ClientPointer: make(map[int]*whatsmeow.Client),
+		Container:     container,
+		ClientHttp:    make(map[int]*resty.Client),
+		WaDebug:       waDebug,
+		LogType:       logType,
 	}
-	
+
 	routes(s)
 
 	s.ConnectOnStartup()
