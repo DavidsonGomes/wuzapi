@@ -126,7 +126,7 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 	case *events.PairSuccess:
 		postmap["type"] = "PairSuccess"
 		dowebhook = 1
-		log.Info().Str("userid", strconv.Itoa(mycli.userID)).Str("token", mycli.token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
+		log.Info().Str("userid", strconv.Itoa(mycli.UserID)).Str("token", mycli.Token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
 
 		jid := evt.ID
 		sqlStmt := `UPDATE users SET jid=? WHERE id=?`
