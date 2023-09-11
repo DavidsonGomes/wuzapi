@@ -190,6 +190,7 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 	store.DeviceProps.PlatformType = waProto.DeviceProps_UNKNOWN.Enum()
 	store.DeviceProps.Os = &osName
 
+	s.ClientHttp[userID] = resty.New()
 	var client *whatsmeow.Client
 	if *s.WaDebug == "DEBUG" {
 		client = whatsmeow.NewClient(
@@ -215,7 +216,6 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 		Db:             s.Db,
 	}
 	mycli.EventHandlerID = mycli.WAClient.AddEventHandler(mycli.MyEventHandler)
-	s.ClientHttp[userID] = resty.New()
 	s.ClientHttp[userID].SetRedirectPolicy(resty.FlexibleRedirectPolicy(15))
 
 	s.ClientHttp[userID].SetTimeout(5 * time.Second)
