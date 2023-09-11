@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"mime"
@@ -16,6 +17,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog/log"
+	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
@@ -100,6 +102,10 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 			}
 		}
 	case *events.Connected, *events.PushNameSetting:
+		postmap["type"] = "SessionStatus"
+		postmap["state"] = "Connected"
+		dowebhook = 1
+
 		if len(mycli.WAClient.Store.PushName) == 0 {
 			return
 		}
@@ -118,7 +124,10 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 			return
 		}
 	case *events.PairSuccess:
-		log.Info().Str("userid", strconv.Itoa(mycli.UserID)).Str("token", mycli.Token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
+		postmap["type"] = "PairSuccess"
+		dowebhook = 1
+		log.Info().Str("userid", strconv.Itoa(mycli.userID)).Str("token", mycli.token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
+
 		jid := evt.ID
 		sqlStmt := `UPDATE users SET jid=? WHERE id=?`
 		_, err := mycli.Db.Exec(sqlStmt, jid, mycli.UserID)
@@ -320,6 +329,10 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 	case *events.AppState:
 		log.Info().Str("index", fmt.Sprintf("%+v", evt.Index)).Str("actionValue", fmt.Sprintf("%+v", evt.SyncActionValue)).Msg("App state event received")
 	case *events.LoggedOut:
+		postmap["type"] = "SessionStatus"
+		postmap["state"] = "LoggedOut"
+		dowebhook = 1
+
 		log.Info().Str("reason", evt.Reason.String()).Msg("Logged out")
 		mycli.KillChannel[mycli.UserID] <- true
 		sqlStmt := `UPDATE users SET connected=0 WHERE id=?`
@@ -342,6 +355,17 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call offer notice")
 	case *events.CallRelayLatency:
 		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got call relay latency")
+	case *events.QR:
+		postmap["type"] = "QR"
+		image, _ := qrcode.Encode(evt.Codes[0], qrcode.Medium, 256)
+		base64qrcode := "data:image/png;base64," + base64.StdEncoding.EncodeToString(image)
+		postmap["code"] = base64qrcode
+		dowebhook = 1
+		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got QR")
+	case *events.PairError:
+		postmap["type"] = "PairError"
+		dowebhook = 1
+		log.Info().Str("event", fmt.Sprintf("%+v", evt)).Msg("Got QR")
 	default:
 		log.Warn().Str("event", fmt.Sprintf("%+v", evt)).Msg("Unhandled event")
 	}
@@ -367,12 +391,12 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 			webhook := webhook.Webhook{ClientHttp: mycli.ClientHttp}
 			if path == "" {
 				data := make(map[string]string)
-				data["jsonData"] = string(values)
+				data["data"] = string(values)
 				data["token"] = mycli.Token
 				go webhook.CallHook(webhookurl, data, mycli.UserID)
 			} else {
 				data := make(map[string]string)
-				data["jsonData"] = string(values)
+				data["data"] = string(values)
 				data["token"] = mycli.Token
 				go webhook.CallHookFile(webhookurl, data, mycli.UserID, path)
 			}

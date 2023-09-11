@@ -25,7 +25,7 @@ func (s *UserController) SignRoutes(c alice.Chain) {
 	s.Router.Handle("/user/create", c.Then(s.CreateUser())).Methods("POST")
 	s.Router.Handle("/user/delete", c.Then(s.DeleteUser())).Methods("POST")
 	s.Router.Handle("/user/fetch", c.Then(s.GetUserByToken())).Methods("POST")
-	s.Router.Handle("/user/info", c.Then(s.GetUser())).Methods("GET")
+	s.Router.Handle("/user/info", c.Then(s.GetUser())).Methods("POST")
 	s.Router.Handle("/user/check", c.Then(s.CheckUser())).Methods("POST")
 	s.Router.Handle("/user/avatar", c.Then(s.GetAvatar())).Methods("POST")
 	s.Router.Handle("/user/contacts", c.Then(s.GetContacts())).Methods("GET")

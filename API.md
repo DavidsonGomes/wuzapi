@@ -227,10 +227,10 @@ Gets information for users on Whatsapp
 
 Endpoint: _/user/info_
 
-Method: **GET**
+Method: **POST**
 
 ```
-curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":["5491155554445","5491155554444"]}' http://localhost:8080/user 
+curl -s -X POST -H 'Token: 1234ABCD' -H 'Content-Type: application/json' --data '{"Phone":["5491155554445","5491155554444"]}' http://localhost:8080/user/info
 ```
 
 Response:
