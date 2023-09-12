@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 	controllerBase "wuzapi/controllers/controller_base"
+	"wuzapi/repository"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -99,7 +100,7 @@ func main() {
 
 	s := &controllerBase.Controller{
 		Router:        mux.NewRouter(),
-		Db:            db,
+		Repository:    repository.NewUserRepository(db),
 		ExPath:        exPath,
 		UserInfoCache: userinfocache,
 		KillChannel:   killchannel,

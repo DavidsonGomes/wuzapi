@@ -10,6 +10,7 @@ import (
 	controllerBase "wuzapi/controllers/controller_base"
 	"wuzapi/internal/helpers"
 	internalTypes "wuzapi/internal/types"
+	"wuzapi/repository"
 
 	"github.com/justinas/alice"
 	"github.com/rs/zerolog/log"
@@ -47,41 +48,26 @@ func (s *UserController) CreateUser() http.HandlerFunc {
 			return
 		}
 
-		var userID int
-		err = s.Db.QueryRow("SELECT id FROM users WHERE token=? LIMIT 1", t.Token).Scan(&userID)
+		user, err := s.Repository.CreateUser(&repository.User{Name: t.Name, Token: t.Token})
 		if err == nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("User already exists"))
+			s.Respond(w, r, http.StatusBadRequest, err.Error())
 			return
 		} else if err != sql.ErrNoRows {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 			return
 		}
 
-		result, err := s.Db.Exec("INSERT INTO users (name, token) VALUES (?, ?)", t.Name, t.Token)
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-			return
-		}
-
-		userIDInt64, err := result.LastInsertId()
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, err)
-			return
-		}
-
-		userID = int(userIDInt64)
-
-		user := struct {
+		userResponse := struct {
 			ID    int    `json:"id"`
 			Name  string `json:"name"`
 			Token string `json:"token"`
 		}{
-			ID:    userID,
-			Name:  t.Name,
-			Token: t.Token,
+			ID:    user.Id,
+			Name:  user.Name,
+			Token: user.Token,
 		}
 
-		responseJSON, err := json.Marshal(user)
+		responseJSON, err := json.Marshal(userResponse)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err.Error())
 			return
@@ -107,30 +93,7 @@ func (s *UserController) DeleteUser() http.HandlerFunc {
 			return
 		}
 
-		rows, err := s.Db.Query("SELECT name FROM users WHERE token=? LIMIT 1", t.Token)
-		if err != nil {
-			rows.Close()
-			s.Respond(w, r, http.StatusInternalServerError, err)
-			return
-		}
-
-		for rows.Next() {
-			var name string
-			err = rows.Scan(&name)
-			if err != nil {
-				rows.Close()
-				s.Respond(w, r, http.StatusInternalServerError, err)
-				return
-			}
-
-			if name == "admin" {
-				rows.Close()
-				s.Respond(w, r, http.StatusBadRequest, errors.New("Cannot delete admin user"))
-				return
-			}
-		}
-
-		_, err = s.Db.Query(fmt.Sprintf("delete from users where token='%s'", t.Token))
+		err = s.Repository.DeleteUserByToken(t.Token)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 			return
@@ -161,20 +124,17 @@ func (s *UserController) GetUserByToken() http.HandlerFunc {
 			return
 		}
 
-		var user userResponse
-		err := s.Db.QueryRow("SELECT id, name, token, webhook, jid FROM users WHERE token=? LIMIT 1", t.Token).Scan(
-			&user.ID, &user.Name, &user.Token, &user.Webhook, &user.Jid,
-		)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				s.Respond(w, r, http.StatusNotFound, "User not found")
-				return
-			}
-			s.Respond(w, r, http.StatusInternalServerError, err)
-			return
+		user, err := s.Repository.GetUserByToken(t.Token)
+
+		userResponse := &userResponse{
+			ID:      user.Id,
+			Name:    user.Name,
+			Token:   user.Token,
+			Webhook: user.Webhook,
+			Jid:     user.Jid,
 		}
 
-		responseJSON, err := json.Marshal(user)
+		responseJSON, err := json.Marshal(userResponse)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err.Error())
 			return

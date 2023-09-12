@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"wuzapi/controllers/controller_base"
+	controllerBase "wuzapi/controllers/controller_base"
 	"wuzapi/internal/helpers"
 	internalTypes "wuzapi/internal/types"
 
@@ -77,7 +77,7 @@ func (s *SessionController) Connect() http.HandlerFunc {
 				}
 			}
 			eventstring = strings.Join(subscribedEvents, ",")
-			_, err = s.Db.Exec("UPDATE users SET events=? WHERE id=?", eventstring, userid)
+			err = s.Repository.SetEvents(eventstring, userid)
 			if err != nil {
 				log.Warn().Msg("Could not set events in users table")
 			}
@@ -134,7 +134,7 @@ func (s *SessionController) Disconnect() http.HandlerFunc {
 			if s.ClientPointer[userid].IsLoggedIn() == true {
 				log.Info().Str("jid", jid).Msg("Disconnection successfull")
 				s.KillChannel[userid] <- true
-				_, err := s.Db.Exec("UPDATE users SET events=? WHERE id=?", "", userid)
+				err := s.Repository.SetEvents("", userid)
 				if err != nil {
 					log.Warn().Str("userid", txtid).Msg("Could not set events in users table")
 				}
@@ -246,35 +246,24 @@ func (s *SessionController) GetQR() http.HandlerFunc {
 		if s.ClientPointer[userid] == nil {
 			s.Respond(w, r, http.StatusInternalServerError, errors.New("No session"))
 			return
-		} else {
-			if s.ClientPointer[userid].IsConnected() == false {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New("Not connected"))
-				return
-			}
-			rows, err := s.Db.Query("SELECT qrcode AS code FROM users WHERE id=? LIMIT 1", userid)
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, err)
-				return
-			}
-			defer rows.Close()
-			for rows.Next() {
-				err = rows.Scan(&code)
-				if err != nil {
-					s.Respond(w, r, http.StatusInternalServerError, err)
-					return
-				}
-			}
-			err = rows.Err()
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, err)
-				return
-			}
-			if s.ClientPointer[userid].IsLoggedIn() == true {
-				s.Respond(w, r, http.StatusInternalServerError, errors.New("Already Loggedin"))
-				return
-			}
 		}
 
+		if s.ClientPointer[userid].IsConnected() == false {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("Not connected"))
+			return
+		}
+
+		if s.ClientPointer[userid].IsLoggedIn() == true {
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("Already Loggedin"))
+			return
+		}
+
+		code, err := s.Repository.GetQrCode(userid)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, err)
+			return
+		}
+		
 		log.Info().Str("userid", txtid).Str("qrcode", code).Msg("Get QR successful")
 		response := map[string]interface{}{"QRCode": fmt.Sprintf("%s", code)}
 		responseJson, err := json.Marshal(response)

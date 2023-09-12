@@ -3,7 +3,6 @@ package controllerBase
 import (
 	"context"
 	"crypto/tls"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +14,7 @@ import (
 	"time"
 	"wuzapi/internal/helpers"
 	internalTypes "wuzapi/internal/types"
+	"wuzapi/repository"
 
 	"github.com/go-resty/resty/v2"
 	"github.com/gorilla/mux"
@@ -30,7 +30,7 @@ import (
 )
 
 type Controller struct {
-	Db            *sql.DB
+	Repository    repository.UserRepository
 	Router        *mux.Router
 	ExPath        string
 	ClientPointer map[int]*whatsmeow.Client
@@ -69,61 +69,36 @@ func (s *Controller) Respond(w http.ResponseWriter, r *http.Request, status int,
 
 // Connects to Whatsapp Websocket on server startup if last state was connected
 func (s *Controller) ConnectOnStartup() {
-	rows, err := s.Db.Query("SELECT id,token,jid,webhook,events FROM users WHERE connected=1")
+	users, err := s.Repository.GetConnectedUsers()
 	if err != nil {
 		log.Error().Err(err).Msg("DB Problem")
 		return
 	}
-	defer rows.Close()
-	for rows.Next() {
-		txtid := ""
-		token := ""
-		jid := ""
-		webhook := ""
-		events := ""
-		err = rows.Scan(&txtid, &token, &jid, &webhook, &events)
-		if err != nil {
-			log.Error().Err(err).Msg("DB Problem")
-			return
-		} else {
-			log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
-			v := internalTypes.Values{M: map[string]string{
-				"Id":      txtid,
-				"Jid":     jid,
-				"Webhook": webhook,
-				"Token":   token,
-				"Events":  events,
-			}}
-			s.UserInfoCache.Set(token, v, cache.NoExpiration)
-			userid, _ := strconv.Atoi(txtid)
-			// Gets and set subscription to webhook events
-			eventarray := strings.Split(events, ",")
+	for _, user := range users {
+		s.UserInfoCache.Set(user.Token, user.ToValues(), cache.NoExpiration)
 
-			var subscribedEvents []string
-			if len(eventarray) < 1 {
-				if !helpers.Find(subscribedEvents, "All") {
-					subscribedEvents = append(subscribedEvents, "All")
+		eventarray := strings.Split(user.Events, ",")
+
+		var subscribedEvents []string
+		if len(eventarray) < 1 {
+			if !helpers.Find(subscribedEvents, "All") {
+				subscribedEvents = append(subscribedEvents, "All")
+			}
+		} else {
+			for _, arg := range eventarray {
+				if !helpers.Find(internalTypes.MessageTypes, arg) {
+					log.Warn().Str("Type", arg).Msg("Message type discarded")
+					continue
 				}
-			} else {
-				for _, arg := range eventarray {
-					if !helpers.Find(internalTypes.MessageTypes, arg) {
-						log.Warn().Str("Type", arg).Msg("Message type discarded")
-						continue
-					}
-					if !helpers.Find(subscribedEvents, arg) {
-						subscribedEvents = append(subscribedEvents, arg)
-					}
+				if !helpers.Find(subscribedEvents, arg) {
+					subscribedEvents = append(subscribedEvents, arg)
 				}
 			}
-			eventstring := strings.Join(subscribedEvents, ",")
-			log.Info().Str("events", eventstring).Str("jid", jid).Msg("Attempt to connect")
-			s.KillChannel[userid] = make(chan bool)
-			go s.StartClient(userid, jid, token, subscribedEvents)
 		}
-	}
-	err = rows.Err()
-	if err != nil {
-		log.Error().Err(err).Msg("DB Problem")
+		eventstring := strings.Join(subscribedEvents, ",")
+		log.Info().Str("events", eventstring).Str("jid", user.Jid).Msg("Attempt to connect")
+		s.KillChannel[user.Id] = make(chan bool)
+		go s.StartClient(user.Id, user.Jid, user.Token, subscribedEvents)
 	}
 }
 
@@ -213,7 +188,7 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 		Subscriptions:  subscriptions,
 		UserInfoCache:  s.UserInfoCache,
 		KillChannel:    s.KillChannel,
-		Db:             s.Db,
+		Repository:     s.Repository,
 	}
 	mycli.EventHandlerID = mycli.WAClient.AddEventHandler(mycli.MyEventHandler)
 	s.ClientHttp[userID].SetRedirectPolicy(resty.FlexibleRedirectPolicy(15))
@@ -245,17 +220,15 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 					// Store encoded/embeded base64 QR on database for retrieval with the /qr endpoint
 					image, _ := qrcode.Encode(evt.Code, qrcode.Medium, 256)
 					base64qrcode := "data:image/png;base64," + base64.StdEncoding.EncodeToString(image)
-					sqlStmt := `UPDATE users SET qrcode=? WHERE id=?`
-					_, err := s.Db.Exec(sqlStmt, base64qrcode, userID)
+					err := s.Repository.SetQrCode(base64qrcode, userID)
 					if err != nil {
-						log.Error().Err(err).Msg(sqlStmt)
+						log.Error().Err(err).Msg(err.Error())
 					}
 				} else if evt.Event == "timeout" {
 					// Clear QR code from DB on timeout
-					sqlStmt := `UPDATE users SET qrcode=? WHERE id=?`
-					_, err := s.Db.Exec(sqlStmt, "", userID)
+					err := s.Repository.SetQrCode("", userID)
 					if err != nil {
-						log.Error().Err(err).Msg(sqlStmt)
+						log.Error().Err(err).Msg(err.Error())
 					}
 					log.Warn().Msg("QR timeout killing channel")
 					delete(s.ClientPointer, userID)
@@ -263,10 +236,9 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 				} else if evt.Event == "success" {
 					log.Info().Msg("QR pairing ok!")
 					// Clear QR code after pairing
-					sqlStmt := `UPDATE users SET qrcode=? WHERE id=?`
-					_, err := s.Db.Exec(sqlStmt, "", userID)
+					err := s.Repository.SetQrCode("", userID)
 					if err != nil {
-						log.Error().Err(err).Msg(sqlStmt)
+						log.Error().Err(err).Msg(err.Error())
 					}
 				} else {
 					log.Info().Str("event", evt.Event).Msg("Login event")
@@ -290,10 +262,9 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 			log.Info().Str("userid", strconv.Itoa(userID)).Msg("Received kill signal")
 			client.Disconnect()
 			delete(s.ClientPointer, userID)
-			sqlStmt := `UPDATE users SET connected=0 WHERE id=?`
-			_, err := s.Db.Exec(sqlStmt, userID)
+			err := s.Repository.DisconnectUser(userID)
 			if err != nil {
-				log.Error().Err(err).Msg(sqlStmt)
+				log.Error().Err(err).Msg(err.Error())
 			}
 			return
 		default:
@@ -308,10 +279,6 @@ func (s *Controller) AuthAlice(next http.Handler) http.Handler {
 
 		var ctx context.Context
 		userid := 0
-		txtid := ""
-		webhook := ""
-		jid := ""
-		events := ""
 
 		// Get token from headers or uri parameters
 		token := r.Header.Get("token")
@@ -323,30 +290,14 @@ func (s *Controller) AuthAlice(next http.Handler) http.Handler {
 		if !found {
 			log.Info().Msg("Looking for user information in DB")
 			// Checks DB from matching user and store user values in context
-			rows, err := s.Db.Query("SELECT id,webhook,jid,events FROM users WHERE token=? LIMIT 1", token)
+			user, err := s.Repository.GetUserByToken(token)
 			if err != nil {
 				s.Respond(w, r, http.StatusInternalServerError, err)
 				return
 			}
-			defer rows.Close()
-			for rows.Next() {
-				err = rows.Scan(&txtid, &webhook, &jid, &events)
-				if err != nil {
-					s.Respond(w, r, http.StatusInternalServerError, err)
-					return
-				}
-				userid, _ = strconv.Atoi(txtid)
-				v := internalTypes.Values{M: map[string]string{
-					"Id":      txtid,
-					"Jid":     jid,
-					"Webhook": webhook,
-					"Token":   token,
-					"Events":  events,
-				}}
-
-				s.UserInfoCache.Set(token, v, cache.NoExpiration)
-				ctx = context.WithValue(r.Context(), "userinfo", v)
-			}
+			v := user.ToValues()
+			s.UserInfoCache.Set(token, v, cache.NoExpiration)
+			ctx = context.WithValue(r.Context(), "userinfo", v)
 		} else {
 			ctx = context.WithValue(r.Context(), "userinfo", myuserinfo)
 			userid, _ = strconv.Atoi(myuserinfo.(internalTypes.Values).Get("Id"))
@@ -366,10 +317,6 @@ func (s *Controller) Auth(handler http.HandlerFunc) http.HandlerFunc {
 
 		var ctx context.Context
 		userid := 0
-		txtid := ""
-		webhook := ""
-		jid := ""
-		events := ""
 
 		// Get token from headers or uri parameters
 		token := r.Header.Get("token")
@@ -381,30 +328,14 @@ func (s *Controller) Auth(handler http.HandlerFunc) http.HandlerFunc {
 		if !found {
 			log.Info().Msg("Looking for user information in DB")
 			// Checks DB from matching user and store user values in context
-			rows, err := s.Db.Query("SELECT id,webhook,jid,events FROM users WHERE token=? LIMIT 1", token)
+			user, err := s.Repository.GetUserByToken(token)
 			if err != nil {
 				s.Respond(w, r, http.StatusInternalServerError, err)
 				return
 			}
-			defer rows.Close()
-			for rows.Next() {
-				err = rows.Scan(&txtid, &webhook, &jid, &events)
-				if err != nil {
-					s.Respond(w, r, http.StatusInternalServerError, err)
-					return
-				}
-				userid, _ = strconv.Atoi(txtid)
-				v := internalTypes.Values{M: map[string]string{
-					"Id":      txtid,
-					"Jid":     jid,
-					"Webhook": webhook,
-					"Token":   token,
-					"Events":  events,
-				}}
-
-				s.UserInfoCache.Set(token, v, cache.NoExpiration)
-				ctx = context.WithValue(r.Context(), "userinfo", v)
-			}
+			v := user.ToValues()
+			s.UserInfoCache.Set(token, v, cache.NoExpiration)
+			ctx = context.WithValue(r.Context(), "userinfo", v)
 		} else {
 			ctx = context.WithValue(r.Context(), "userinfo", myuserinfo)
 			userid, _ = strconv.Atoi(myuserinfo.(internalTypes.Values).Get("Id"))

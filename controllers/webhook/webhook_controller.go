@@ -27,32 +27,16 @@ func (s *WebhookController) SignRoutes(c alice.Chain) {
 func (s *WebhookController) GetWebhook() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		webhook := ""
-		events := ""
 		txtid := r.Context().Value("userinfo").(internalTypes.Values).Get("Id")
-
-		rows, err := s.Db.Query("SELECT webhook,events FROM users WHERE id=? LIMIT 1", txtid)
+		id, err := strconv.Atoi(txtid)
 		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("Could not get webhook: %v", err))
-			return
+			s.Respond(w, r, http.StatusBadRequest, fmt.Errorf("Invalid Id"))
 		}
-		defer rows.Close()
-		for rows.Next() {
-			err = rows.Scan(&webhook, &events)
-			if err != nil {
-				s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("Could not get webhook: %s", fmt.Sprintf("%s", err)))
-				return
-			}
-		}
-		err = rows.Err()
-		if err != nil {
-			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("Could not get webhook: %s", fmt.Sprintf("%s", err)))
-			return
-		}
+		user, err := s.Repository.GetUserById(id)
 
-		eventarray := strings.Split(events, ",")
+		eventarray := strings.Split(user.Events, ",")
 
-		response := map[string]interface{}{"webhook": webhook, "subscribe": eventarray}
+		response := map[string]interface{}{"webhook": user.Webhook, "subscribe": eventarray}
 		responseJson, err := json.Marshal(response)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
@@ -83,7 +67,7 @@ func (s *WebhookController) SetWebhook() http.HandlerFunc {
 		}
 		var webhook = t.WebhookURL
 
-		_, err = s.Db.Exec("UPDATE users SET webhook=? WHERE id=?", webhook, userid)
+		err = s.Repository.SetWebhook(webhook, userid)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("%s", err))
 			return

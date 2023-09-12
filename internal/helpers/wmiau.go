@@ -1,7 +1,6 @@
 package helpers
 
 import (
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	internalTypes "wuzapi/internal/types"
+	"wuzapi/repository"
 	"wuzapi/webhook"
 
 	"github.com/go-resty/resty/v2"
@@ -72,7 +72,7 @@ type MyClient struct {
 	UserID         int
 	Token          string
 	Subscriptions  []string
-	Db             *sql.DB
+	Repository     repository.UserRepository
 	UserInfoCache  *cache.Cache
 	KillChannel    map[int](chan bool)
 	ClientHttp     map[int]*resty.Client
@@ -117,10 +117,9 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 		} else {
 			log.Info().Msg("Marked self as available")
 		}
-		sqlStmt := `UPDATE users SET connected=1 WHERE id=?`
-		_, err = mycli.Db.Exec(sqlStmt, mycli.UserID)
+		err = mycli.Repository.ConnectUser(mycli.UserID)
 		if err != nil {
-			log.Error().Err(err).Msg(sqlStmt)
+			log.Error().Err(err).Msg(err.Error())
 			return
 		}
 	case *events.PairSuccess:
@@ -129,10 +128,9 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 		log.Info().Str("userid", strconv.Itoa(mycli.UserID)).Str("token", mycli.Token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
 
 		jid := evt.ID
-		sqlStmt := `UPDATE users SET jid=? WHERE id=?`
-		_, err := mycli.Db.Exec(sqlStmt, jid, mycli.UserID)
+		err := mycli.Repository.SetJid(jid.String(), mycli.UserID)
 		if err != nil {
-			log.Error().Err(err).Msg(sqlStmt)
+			log.Error().Err(err).Msg(err.Error())
 			return
 		}
 
@@ -335,10 +333,9 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 
 		log.Info().Str("reason", evt.Reason.String()).Msg("Logged out")
 		mycli.KillChannel[mycli.UserID] <- true
-		sqlStmt := `UPDATE users SET connected=0 WHERE id=?`
-		_, err := mycli.Db.Exec(sqlStmt, mycli.UserID)
+		err := mycli.Repository.DisconnectUser(mycli.UserID)
 		if err != nil {
-			log.Error().Err(err).Msg(sqlStmt)
+			log.Error().Err(err).Msg(err.Error())
 			return
 		}
 	case *events.ChatPresence:
