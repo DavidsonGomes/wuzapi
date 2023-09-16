@@ -29,15 +29,15 @@ func routes(s *controllerBase.Controller) {
 	exPath := filepath.Dir(ex)
 
 	if *logType == "json" {
-		log = zerolog.New(os.Stdout).With().Timestamp().Str("role", filepath.Base(os.Args[0])).Str("host", *address).Logger()
+		logger = zerolog.New(os.Stdout).With().Timestamp().Str("role", filepath.Base(os.Args[0])).Str("host", *address).Logger()
 	} else {
 		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
-		log = zerolog.New(output).With().Timestamp().Str("role", filepath.Base(os.Args[0])).Str("host", *address).Logger()
+		logger = zerolog.New(output).With().Timestamp().Str("role", filepath.Base(os.Args[0])).Str("host", *address).Logger()
 	}
 
 	c := alice.New()
 	c = c.Append(s.AuthAlice)
-	c = c.Append(hlog.NewHandler(log))
+	c = c.Append(hlog.NewHandler(logger))
 
 	c = c.Append(hlog.AccessHandler(func(r *http.Request, status, size int, duration time.Duration) {
 		hlog.FromRequest(r).Info().

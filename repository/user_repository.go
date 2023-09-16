@@ -1,11 +1,11 @@
 package repository
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	internalTypes "wuzapi/internal/types"
+
+	"gorm.io/gorm"
 )
 
 type User struct {
@@ -32,6 +32,8 @@ func (u User) ToValues() internalTypes.Values {
 
 type UserRepository interface {
 	CreateUser(user *User) (*User, error)
+	CreateAdminUser(token string) (error)
+	GetAdminUser() (*User, error)
 	GetUserByToken(token string) (*User, error)
 	GetUserById(userId int) (*User, error)
 	GetConnectedUsers() ([]*User, error)
@@ -46,168 +48,103 @@ type UserRepository interface {
 }
 
 type userRepository struct {
-	Db *sql.DB
+	db *gorm.DB
 }
 
-func NewUserRepository(db *sql.DB) UserRepository {
-	return &userRepository{Db: db}
+func NewUserRepository(db *gorm.DB) UserRepository {
+	return &userRepository{db: db}
 }
 
 func (r *userRepository) CreateUser(user *User) (*User, error) {
-	if user, _ := r.GetUserByToken(user.Token); user != nil {
+	if foundUser, _ := r.GetUserByToken(user.Token); foundUser != nil {
 		return nil, errors.New("User already exists")
 	}
 
-	_, err := r.Db.Exec("INSERT INTO users (name, token) VALUES (?, ?)", user.Name, user.Token)
+	err := r.db.Create(user).Error
 	if err != nil {
 		return nil, err
 	}
 	return r.GetUserByToken(user.Token)
 }
 
+func (r *userRepository) CreateAdminUser(token string) error {
+	if user, _ := r.GetAdminUser(); user != nil {
+		user.Token = token
+		return r.db.Updates(user).Error
+	}
+	return r.db.Create(&User{Name: "admin", Token: token}).Error
+}
+
 func (r *userRepository) ConnectUser(userId int) error {
-	_, err := r.Db.Exec("UPDATE users SET connected=1 WHERE id=?", userId)
-	return err
+	return r.db.Update("connected", 1).Error
 }
 
 func (r *userRepository) DisconnectUser(userId int) error {
-	_, err := r.Db.Exec("UPDATE users SET connected=0 WHERE id=?", userId)
-	return err
+	return r.db.Update("connected", 0).Error
 }
 
 func (r *userRepository) GetConnectedUsers() ([]*User, error) {
-	rows, err := r.Db.Query("SELECT id,token,jid,webhook,events FROM users WHERE connected=1")
+	var users []*User
+
+	err := r.db.Find(&users, "connected = 1").Error
+
 	if err != nil {
 		return nil, err
-	}
-	defer rows.Close()
-
-	users := []*User{}
-	for rows.Next() {
-		txtid := ""
-		token := ""
-		jid := ""
-		webhook := ""
-		events := ""
-		err = rows.Scan(&txtid, &token, &jid, &webhook, &events)
-		if err != nil {
-			return nil, err
-		}
-		id, err := strconv.Atoi(txtid)
-		if err != nil {
-			return nil, err
-		}
-		users = append(users, &User{Id: id, Token: token, Jid: jid, Webhook: webhook, Events: events})
 	}
 	return users, nil
 }
 
 func (r *userRepository) DeleteUserByToken(token string) error {
-	rows, err := r.Db.Query("SELECT name FROM users WHERE token=? LIMIT 1", token)
+	var user *User
+	err := r.db.Find(&user, "token = ?", token).Error
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var name string
-		err = rows.Scan(&name)
-		if err != nil {
-			return err
-		}
-
-		if name == "admin" {
-			return errors.New("Cannot delete admin user")
-		}
+	if user == nil {
+		return fmt.Errorf("user not found for token %s", token)
 	}
-
-	_, err = r.Db.Query(fmt.Sprintf("delete from users where token='%s'", token))
-	return err
+	err = r.db.Delete(&user).Error
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *userRepository) SetJid(jid string, userId int) error {
-	_, err := r.Db.Exec("UPDATE users SET jid=? WHERE id=?", jid, userId)
-	return err
+	return r.db.Where(userId).Update("jid", jid).Error
 }
 
 func (r *userRepository) SetEvents(events string, userId int) error {
-	_, err := r.Db.Exec("UPDATE users SET events=? WHERE id=?", events, userId)
-	return err
+	return r.db.Where(userId).Update("events", events).Error
 }
 
-func (r *userRepository)SetWebhook(webhooks string, userId int) error {
-	_, err := r.Db.Exec("UPDATE users SET webhook=? WHERE id=?", webhooks, userId)
-	return err
-}
-
-func (r *userRepository) GetQrCode(userId int) (string, error) {
-	var code string
-	rows, err := r.Db.Query("SELECT qrcode AS code FROM users WHERE id=? LIMIT 1", userId)
-	if err != nil {
-		return "", err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		err = rows.Scan(&code)
-		if err != nil {
-			return "", err
-		}
-	}
-	return code, nil
+func (r *userRepository) SetWebhook(webhooks string, userId int) error {
+	return r.db.Where(userId).Update("webhooks", webhooks).Error
 }
 
 func (r *userRepository) SetQrCode(qrCode string, userId int) error {
-	_, err := r.Db.Exec("UPDATE users SET qrcode=? WHERE id=?", qrCode, userId)
-	return err
+	return r.db.Where(userId).Update("qr_code", qrCode).Error
 }
 
-func (r *userRepository) GetUserByToken(token string) (*User, error) {
-	rows, err := r.Db.Query("SELECT id,webhook,jid,events,name,token FROM users WHERE token=? LIMIT 1", token)
+func (r *userRepository) GetQrCode(userId int) (string, error) {
+	user, err := r.GetUserById(userId)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	defer rows.Close()
-	for rows.Next() {
-		txtid := ""
-		jid := ""
-		webhook := ""
-		events := ""
-		name := ""
-		token := ""
-		err = rows.Scan(&txtid, &webhook, &jid, &events, &name, &token)
-		if err != nil {
-			return nil, err
-		}
-		userid, _ := strconv.Atoi(txtid)
-		return &User{Id: userid, Name: name, Token: token, Webhook: webhook, Events: events}, nil
-	}
-	return nil, nil
+	return user.QrCode, nil
 }
 
-func (r *userRepository) GetUserById(userId int) (*User, error) {
+func (r *userRepository) GetUserByToken(token string) (user *User, err error) {
+	err = r.db.Find(&user, "token like ?", token).Error
+	return
+}
 
-	name := ""
-	token := ""
-	webhook := ""
-	jid := ""
-	qrcode := ""
-	events := ""
+func (r *userRepository) GetAdminUser() (user *User, err error) {
+	err = r.db.Find(&user, "name like 'admin'").Error
+	return
+}
 
-	rows, err := r.Db.Query("SELECT name,token,webhook,jid,qrcode,events FROM users WHERE id=? LIMIT 1", userId)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		err = rows.Scan(&name, &token, &webhook, &jid, &qrcode, &events)
-		if err != nil {
-			return nil, err
-		}
-	}
-	err = rows.Err()
-	if err != nil {
-		return nil, err
-	}
-
-	return &User{Id: userId, Webhook: webhook, Events: events}, nil
+func (r *userRepository) GetUserById(userId int) (user *User, err error) {
+	err = r.db.Find(&user, userId).Error
+	return
 }
