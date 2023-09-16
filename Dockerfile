@@ -10,7 +10,8 @@ FROM alpine:3.18.3
 
 WORKDIR /app
 
-COPY --from=build /app .
+COPY --from=build /app/server .
+COPY --from=build /app/static ./static
 
 VOLUME [ "/app/dbdata", "/app/files" ]
 
