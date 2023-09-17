@@ -11,6 +11,7 @@ import (
 	controllerBase "wuzapi/controllers/controller_base"
 	"wuzapi/internal/helpers"
 	internalTypes "wuzapi/internal/types"
+	"wuzapi/repository"
 
 	"github.com/justinas/alice"
 	"github.com/patrickmn/go-cache"
@@ -29,7 +30,7 @@ func (s *SessionController) SignRoutes(c alice.Chain) {
 	s.Router.Handle("/session/qr", c.Then(s.GetQR())).Methods("GET")
 }
 
-// Connects to Whatsapp Servers
+// Connect Connects to Whatsapp Servers
 func (s *SessionController) Connect() http.HandlerFunc {
 
 	type connectStruct struct {
@@ -51,12 +52,12 @@ func (s *SessionController) Connect() http.HandlerFunc {
 		var t connectStruct
 		err := decoder.Decode(&t)
 		if err != nil {
-			s.Respond(w, r, http.StatusBadRequest, errors.New("Could not decode Payload"))
+			s.Respond(w, r, http.StatusBadRequest, errors.New("could not decode Payload"))
 			return
 		}
 
 		if s.ClientPointer[userid] != nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("Already Connected"))
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("already Connected"))
 			return
 		} else {
 
@@ -77,7 +78,11 @@ func (s *SessionController) Connect() http.HandlerFunc {
 				}
 			}
 			eventstring = strings.Join(subscribedEvents, ",")
-			err = s.Repository.SetEvents(eventstring, userid)
+			user, err := repository.NewUser(s.Repository, userid)
+			if err != nil {
+				log.Warn().Str("userid", txtid).Msg("Could not find user with the given ID")
+			}
+			err = user.SetEvents("")
 			if err != nil {
 				log.Warn().Msg("Could not set events in users table")
 			}
@@ -87,7 +92,12 @@ func (s *SessionController) Connect() http.HandlerFunc {
 
 			log.Info().Str("jid", jid).Msg("Attempt to connect")
 			s.KillChannel[userid] = make(chan bool)
-			go s.StartClient(userid, jid, token, subscribedEvents)
+			go func() {
+				err := s.StartClient(userid, jid, token, subscribedEvents)
+				if err != nil {
+					log.Warn().Msg("Could not start client...")
+				}
+			}()
 
 			if t.Immediate == false {
 				log.Warn().Msg("Waiting 10 seconds")
@@ -95,11 +105,11 @@ func (s *SessionController) Connect() http.HandlerFunc {
 
 				if s.ClientPointer[userid] != nil {
 					if !s.ClientPointer[userid].IsConnected() {
-						s.Respond(w, r, http.StatusInternalServerError, errors.New("Failed to Connect"))
+						s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to Connect"))
 						return
 					}
 				} else {
-					s.Respond(w, r, http.StatusInternalServerError, errors.New("Failed to Connect"))
+					s.Respond(w, r, http.StatusInternalServerError, errors.New("failed to Connect"))
 					return
 				}
 			}
@@ -117,7 +127,7 @@ func (s *SessionController) Connect() http.HandlerFunc {
 	}
 }
 
-// Disconnects from Whatsapp websocket, does not log out device
+// Disconnect Disconnects from Whatsapp websocket, does not log out device
 func (s *SessionController) Disconnect() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -127,14 +137,18 @@ func (s *SessionController) Disconnect() http.HandlerFunc {
 		userid, _ := strconv.Atoi(txtid)
 
 		if s.ClientPointer[userid] == nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("No session"))
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
 		if s.ClientPointer[userid].IsConnected() == true {
 			if s.ClientPointer[userid].IsLoggedIn() == true {
 				log.Info().Str("jid", jid).Msg("Disconnection successfull")
 				s.KillChannel[userid] <- true
-				err := s.Repository.SetEvents("", userid)
+				user, err := repository.NewUser(s.Repository, userid)
+				if err != nil {
+					log.Warn().Str("userid", txtid).Msg("Could not find user with the given ID")
+				}
+				err = user.SetEvents("")
 				if err != nil {
 					log.Warn().Str("userid", txtid).Msg("Could not set events in users table")
 				}
@@ -151,18 +165,18 @@ func (s *SessionController) Disconnect() http.HandlerFunc {
 				return
 			} else {
 				log.Warn().Str("jid", jid).Msg("Ignoring disconnect as it was not connected")
-				s.Respond(w, r, http.StatusInternalServerError, errors.New("Cannot disconnect because it is not logged in"))
+				s.Respond(w, r, http.StatusInternalServerError, errors.New("cannot disconnect because it is not logged in"))
 				return
 			}
 		} else {
 			log.Warn().Str("jid", jid).Msg("Ignoring disconnect as it was not connected")
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("Cannot disconnect because it is not logged in"))
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("cannot disconnect because it is not logged in"))
 			return
 		}
 	}
 }
 
-// Logs out device from Whatsapp (requires to scan QR next time)
+// Logout Logs out device from Whatsapp (requires to scan QR next time)
 func (s *SessionController) Logout() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -171,14 +185,14 @@ func (s *SessionController) Logout() http.HandlerFunc {
 		userid, _ := strconv.Atoi(txtid)
 
 		if s.ClientPointer[userid] == nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("No session"))
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		} else {
 			if s.ClientPointer[userid].IsLoggedIn() == true && s.ClientPointer[userid].IsConnected() == true {
 				err := s.ClientPointer[userid].Logout()
 				if err != nil {
 					log.Error().Str("jid", jid).Msg("Could not perform logout")
-					s.Respond(w, r, http.StatusInternalServerError, errors.New("Could not perform logout"))
+					s.Respond(w, r, http.StatusInternalServerError, errors.New("could not perform logout"))
 					return
 				} else {
 					log.Info().Str("jid", jid).Msg("Logged out")
@@ -187,11 +201,11 @@ func (s *SessionController) Logout() http.HandlerFunc {
 			} else {
 				if s.ClientPointer[userid].IsConnected() == true {
 					log.Warn().Str("jid", jid).Msg("Ignoring logout as it was not logged in")
-					s.Respond(w, r, http.StatusInternalServerError, errors.New("Could not disconnect as it was not logged in"))
+					s.Respond(w, r, http.StatusInternalServerError, errors.New("could not disconnect as it was not logged in"))
 					return
 				} else {
 					log.Warn().Str("jid", jid).Msg("Ignoring logout as it was not connected")
-					s.Respond(w, r, http.StatusInternalServerError, errors.New("Could not disconnect as it was not connected"))
+					s.Respond(w, r, http.StatusInternalServerError, errors.New("could not disconnect as it was not connected"))
 					return
 				}
 			}
@@ -208,7 +222,7 @@ func (s *SessionController) Logout() http.HandlerFunc {
 	}
 }
 
-// Gets Connected and LoggedIn Status
+// GetStatus Gets Connected and LoggedIn Status
 func (s *SessionController) GetStatus() http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +231,7 @@ func (s *SessionController) GetStatus() http.HandlerFunc {
 		userid, _ := strconv.Atoi(txtid)
 
 		if s.ClientPointer[userid] == nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("No session"))
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
 
@@ -235,7 +249,7 @@ func (s *SessionController) GetStatus() http.HandlerFunc {
 	}
 }
 
-// Gets QR code encoded in Base64
+// GetQR Gets QR code encoded in Base64
 func (s *SessionController) GetQR() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -244,26 +258,25 @@ func (s *SessionController) GetQR() http.HandlerFunc {
 		code := ""
 
 		if s.ClientPointer[userid] == nil {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("No session"))
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("no session"))
 			return
 		}
 
 		if s.ClientPointer[userid].IsConnected() == false {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("Not connected"))
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("not connected"))
 			return
 		}
 
 		if s.ClientPointer[userid].IsLoggedIn() == true {
-			s.Respond(w, r, http.StatusInternalServerError, errors.New("Already Loggedin"))
+			s.Respond(w, r, http.StatusInternalServerError, errors.New("already Loggedin"))
 			return
 		}
-
 		code, err := s.Repository.GetQrCode(userid)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, err)
 			return
 		}
-		
+
 		log.Info().Str("userid", txtid).Str("qrcode", code).Msg("Get QR successful")
 		response := map[string]interface{}{"QRCode": fmt.Sprintf("%s", code)}
 		responseJson, err := json.Marshal(response)

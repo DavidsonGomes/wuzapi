@@ -9,6 +9,7 @@ import (
 	controllerBase "wuzapi/controllers/controller_base"
 	"wuzapi/internal/helpers"
 	internalTypes "wuzapi/internal/types"
+	"wuzapi/repository"
 
 	"github.com/justinas/alice"
 	"github.com/patrickmn/go-cache"
@@ -67,7 +68,12 @@ func (s *WebhookController) SetWebhook() http.HandlerFunc {
 		}
 		var webhook = t.WebhookURL
 
-		err = s.Repository.SetWebhook(webhook, userid)
+		user, err := repository.NewUser(s.Repository, userid)
+		if err != nil {
+			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("%s", err))
+			return
+		}
+		err = user.SetWebhook(webhook)
 		if err != nil {
 			s.Respond(w, r, http.StatusInternalServerError, fmt.Errorf("%s", err))
 			return

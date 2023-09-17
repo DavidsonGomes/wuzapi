@@ -69,17 +69,44 @@ var historySyncID int32
 type MyClient struct {
 	WAClient       *whatsmeow.Client
 	EventHandlerID uint32
-	UserID         int
+	user           *repository.UserDb
 	Token          string
 	Subscriptions  []string
-	Repository     repository.UserRepository
 	UserInfoCache  *cache.Cache
 	KillChannel    map[int](chan bool)
 	ClientHttp     map[int]*resty.Client
 }
 
+func NewClient(
+	WAClient *whatsmeow.Client,
+	EventHandlerID uint32,
+	UserID int,
+	Token string,
+	Subscriptions []string,
+	Repository repository.UserRepository,
+	UserInfoCache *cache.Cache,
+	KillChannel map[int](chan bool),
+	ClientHttp map[int]*resty.Client,
+) (*MyClient, error) {
+
+	user, err := repository.NewUser(Repository, UserID)
+	if err != nil {
+		return nil, err
+	}
+	return &MyClient{
+		WAClient:       WAClient,
+		EventHandlerID: EventHandlerID,
+		user:           user,
+		Token:          Token,
+		Subscriptions:  Subscriptions,
+		UserInfoCache:  UserInfoCache,
+		KillChannel:    KillChannel,
+		ClientHttp:     ClientHttp,
+	}, nil
+}
+
 func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
-	txtid := strconv.Itoa(mycli.UserID)
+	txtid := strconv.Itoa(mycli.user.Id)
 	postmap := make(map[string]interface{})
 	postmap["event"] = rawEvt
 	dowebhook := 0
@@ -117,7 +144,7 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 		} else {
 			log.Info().Msg("Marked self as available")
 		}
-		err = mycli.Repository.ConnectUser(mycli.UserID)
+		err = mycli.user.Connect()
 		if err != nil {
 			log.Error().Err(err).Msg(err.Error())
 			return
@@ -125,10 +152,11 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 	case *events.PairSuccess:
 		postmap["type"] = "PairSuccess"
 		dowebhook = 1
-		log.Info().Str("userid", strconv.Itoa(mycli.UserID)).Str("token", mycli.Token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
+		log.Info().Str("userid", strconv.Itoa(mycli.user.Id)).Str("token", mycli.Token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
 
 		jid := evt.ID
-		err := mycli.Repository.SetJid(jid.String(), mycli.UserID)
+		mycli.user.Jid = jid.String()
+		err := mycli.user.SetJid(jid.String())
 		if err != nil {
 			log.Error().Err(err).Msg(err.Error())
 			return
@@ -142,7 +170,7 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 			token := myuserinfo.(internalTypes.Values).Get("Token")
 			v := UpdateUserInfo(myuserinfo, "Jid", fmt.Sprintf("%s", jid))
 			mycli.UserInfoCache.Set(token, v, cache.NoExpiration)
-			log.Info().Str("jid", jid.String()).Str("userid", txtid).Str("token", token).Msg("User information set")
+			log.Info().Str("jid", jid.String()).Str("userid", txtid).Str("token", token).Msg("UserDb information set")
 		}
 	case *events.StreamReplaced:
 		log.Info().Msg("Received StreamReplaced event")
@@ -285,13 +313,13 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 		if evt.Unavailable {
 			postmap["state"] = "offline"
 			if evt.LastSeen.IsZero() {
-				log.Info().Str("from", evt.From.String()).Msg("User is now offline")
+				log.Info().Str("from", evt.From.String()).Msg("UserDb is now offline")
 			} else {
-				log.Info().Str("from", evt.From.String()).Str("lastSeen", fmt.Sprintf("%d", evt.LastSeen)).Msg("User is now offline")
+				log.Info().Str("from", evt.From.String()).Str("lastSeen", fmt.Sprintf("%d", evt.LastSeen)).Msg("UserDb is now offline")
 			}
 		} else {
 			postmap["state"] = "online"
-			log.Info().Str("from", evt.From.String()).Msg("User is now online")
+			log.Info().Str("from", evt.From.String()).Msg("UserDb is now online")
 		}
 	case *events.HistorySync:
 		postmap["type"] = "HistorySync"
@@ -332,8 +360,8 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 		dowebhook = 1
 
 		log.Info().Str("reason", evt.Reason.String()).Msg("Logged out")
-		mycli.KillChannel[mycli.UserID] <- true
-		err := mycli.Repository.DisconnectUser(mycli.UserID)
+		mycli.KillChannel[mycli.user.Id] <- true
+		err := mycli.user.Disconnect()
 		if err != nil {
 			log.Error().Err(err).Msg(err.Error())
 			return
@@ -390,15 +418,15 @@ func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
 				data := make(map[string]string)
 				data["data"] = string(values)
 				data["token"] = mycli.Token
-				go webhook.CallHook(webhookurl, data, mycli.UserID)
+				go webhook.CallHook(webhookurl, data, mycli.user.Id)
 			} else {
 				data := make(map[string]string)
 				data["data"] = string(values)
 				data["token"] = mycli.Token
-				go webhook.CallHookFile(webhookurl, data, mycli.UserID, path)
+				go webhook.CallHookFile(webhookurl, data, mycli.user.Id, path)
 			}
 		} else {
-			log.Warn().Str("userid", strconv.Itoa(mycli.UserID)).Msg("No webhook set for user")
+			log.Warn().Str("userid", strconv.Itoa(mycli.user.Id)).Msg("No webhook set for user")
 		}
 	}
 }

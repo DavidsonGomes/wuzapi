@@ -78,7 +78,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = db.AutoMigrate(&repository.User{})
+	err = db.AutoMigrate(&repository.UserDb{})
 	if err != nil {
 		log.Fatal(err)
 	}

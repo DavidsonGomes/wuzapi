@@ -3,48 +3,19 @@ package repository
 import (
 	"errors"
 	"fmt"
-	internalTypes "wuzapi/internal/types"
-
 	"gorm.io/gorm"
 )
 
-type User struct {
-	Id         int
-	Name       string
-	Token      string
-	Webhook    string
-	Jid        string
-	QrCode     string
-	Connected  *int
-	Expiration *int
-	Events     string
-}
-
-func (u User) ToValues() internalTypes.Values {
-	return internalTypes.Values{M: map[string]string{
-		"Id":      fmt.Sprint(u.Id),
-		"Jid":     u.Jid,
-		"Webhook": u.Webhook,
-		"Token":   u.Token,
-		"Events":  u.Events,
-	}}
-}
-
 type UserRepository interface {
 	CreateUser(user *User) (*User, error)
-	CreateAdminUser(token string) (error)
+	CreateAdminUser(token string) error
 	GetAdminUser() (*User, error)
 	GetUserByToken(token string) (*User, error)
 	GetUserById(userId int) (*User, error)
 	GetConnectedUsers() ([]*User, error)
 	DeleteUserByToken(token string) error
 	GetQrCode(userId int) (string, error)
-	SetQrCode(qrCode string, userId int) error
-	SetJid(jid string, userId int) error
-	SetEvents(events string, userId int) error
-	SetWebhook(webhooks string, userId int) error
-	ConnectUser(userId int) error
-	DisconnectUser(userId int) error
+	Updates(user *User) error
 }
 
 type userRepository struct {
@@ -57,7 +28,7 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 
 func (r *userRepository) CreateUser(user *User) (*User, error) {
 	if foundUser, _ := r.GetUserByToken(user.Token); foundUser != nil {
-		return nil, errors.New("User already exists")
+		return nil, errors.New("UserDb already exists")
 	}
 
 	err := r.db.Create(user).Error
@@ -75,12 +46,8 @@ func (r *userRepository) CreateAdminUser(token string) error {
 	return r.db.Create(&User{Name: "admin", Token: token}).Error
 }
 
-func (r *userRepository) ConnectUser(userId int) error {
-	return r.db.Update("connected", 1).Error
-}
-
-func (r *userRepository) DisconnectUser(userId int) error {
-	return r.db.Update("connected", 0).Error
+func (r *userRepository) Updates(user *User) error {
+	return r.db.Updates(user).Error
 }
 
 func (r *userRepository) GetConnectedUsers() ([]*User, error) {
@@ -95,7 +62,7 @@ func (r *userRepository) GetConnectedUsers() ([]*User, error) {
 }
 
 func (r *userRepository) DeleteUserByToken(token string) error {
-	var user *User
+	var user *UserDb
 	err := r.db.Find(&user, "token = ?", token).Error
 	if err != nil {
 		return err
@@ -108,22 +75,6 @@ func (r *userRepository) DeleteUserByToken(token string) error {
 		return err
 	}
 	return nil
-}
-
-func (r *userRepository) SetJid(jid string, userId int) error {
-	return r.db.Where(userId).Update("jid", jid).Error
-}
-
-func (r *userRepository) SetEvents(events string, userId int) error {
-	return r.db.Where(userId).Update("events", events).Error
-}
-
-func (r *userRepository) SetWebhook(webhooks string, userId int) error {
-	return r.db.Where(userId).Update("webhooks", webhooks).Error
-}
-
-func (r *userRepository) SetQrCode(qrCode string, userId int) error {
-	return r.db.Where(userId).Update("qr_code", qrCode).Error
 }
 
 func (r *userRepository) GetQrCode(userId int) (string, error) {

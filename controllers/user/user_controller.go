@@ -99,7 +99,7 @@ func (s *UserController) DeleteUser() http.HandlerFunc {
 			return
 		}
 
-		s.Respond(w, r, http.StatusOK, "User deleted")
+		s.Respond(w, r, http.StatusOK, "UserDb deleted")
 		return
 	}
 }

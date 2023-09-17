@@ -34,7 +34,7 @@ type Controller struct {
 	Router        *mux.Router
 	ExPath        string
 	ClientPointer map[int]*whatsmeow.Client
-	KillChannel   map[int](chan bool)
+	KillChannel   map[int]chan bool
 	UserInfoCache *cache.Cache
 	Container     *sqlstore.Container
 	WaDebug       *string
@@ -42,8 +42,8 @@ type Controller struct {
 	LogType       *string
 }
 
-// Writes JSON response to API clients
-func (s *Controller) Respond(w http.ResponseWriter, r *http.Request, status int, data interface{}) {
+// Respond Writes JSON response to API clients
+func (s *Controller) Respond(w http.ResponseWriter, _ *http.Request, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
@@ -67,7 +67,7 @@ func (s *Controller) Respond(w http.ResponseWriter, r *http.Request, status int,
 	}
 }
 
-// Connects to Whatsapp Websocket on server startup if last state was connected
+// ConnectOnStartup Connects to Whatsapp Websocket on server startup if last state was connected
 func (s *Controller) ConnectOnStartup() {
 	users, err := s.Repository.GetConnectedUsers()
 	if err != nil {
@@ -98,11 +98,16 @@ func (s *Controller) ConnectOnStartup() {
 		eventstring := strings.Join(subscribedEvents, ",")
 		log.Info().Str("events", eventstring).Str("jid", user.Jid).Msg("Attempt to connect")
 		s.KillChannel[user.Id] = make(chan bool)
-		go s.StartClient(user.Id, user.Jid, user.Token, subscribedEvents)
+		go func(user *repository.User) {
+			err := s.StartClient(user.Id, user.Jid, user.Token, subscribedEvents)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Could not start client")
+			}
+		}(user)
 	}
 }
 
-func (s *Controller) StartClient(userID int, textjid string, token string, subscriptions []string) {
+func (s *Controller) StartClient(userID int, textjid string, token string, subscriptions []string) error {
 
 	log.Info().Str("userid", strconv.Itoa(userID)).Str("jid", textjid).Msg("Starting websocket connection to Whatsapp")
 
@@ -112,8 +117,13 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 	if s.ClientPointer[userID] != nil {
 		isConnected := s.ClientPointer[userID].IsConnected()
 		if isConnected == true {
-			return
+			return nil
 		}
+	}
+
+	user, err := repository.NewUser(s.Repository, userID)
+	if err != nil {
+		return err
 	}
 
 	/*  container is initialized on main to have just one connection and avoid sqlite locks
@@ -180,15 +190,19 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 
 	s.ClientPointer[userID] = client
 
-	mycli := helpers.MyClient{
-		WAClient:       client,
-		EventHandlerID: 1,
-		UserID:         userID,
-		Token:          token,
-		Subscriptions:  subscriptions,
-		UserInfoCache:  s.UserInfoCache,
-		KillChannel:    s.KillChannel,
-		Repository:     s.Repository,
+	mycli, err := helpers.NewClient(
+		client,
+		1,
+		userID,
+		token,
+		subscriptions,
+		s.Repository,
+		s.UserInfoCache,
+		s.KillChannel,
+		s.ClientHttp,
+	)
+	if err != nil {
+		return err
 	}
 	mycli.EventHandlerID = mycli.WAClient.AddEventHandler(mycli.MyEventHandler)
 	s.ClientHttp[userID].SetRedirectPolicy(resty.FlexibleRedirectPolicy(15))
@@ -220,15 +234,15 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 					// Store encoded/embeded base64 QR on database for retrieval with the /qr endpoint
 					image, _ := qrcode.Encode(evt.Code, qrcode.Medium, 256)
 					base64qrcode := "data:image/png;base64," + base64.StdEncoding.EncodeToString(image)
-					err := s.Repository.SetQrCode(base64qrcode, userID)
+					err := user.SetQrCode(base64qrcode)
 					if err != nil {
-						log.Error().Err(err).Msg(err.Error())
+						return err
 					}
 				} else if evt.Event == "timeout" {
 					// Clear QR code from DB on timeout
-					err := s.Repository.SetQrCode("", userID)
+					err := user.SetQrCode("")
 					if err != nil {
-						log.Error().Err(err).Msg(err.Error())
+						return err
 					}
 					log.Warn().Msg("QR timeout killing channel")
 					delete(s.ClientPointer, userID)
@@ -236,9 +250,9 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 				} else if evt.Event == "success" {
 					log.Info().Msg("QR pairing ok!")
 					// Clear QR code after pairing
-					err := s.Repository.SetQrCode("", userID)
+					err := user.SetQrCode("")
 					if err != nil {
-						log.Error().Err(err).Msg(err.Error())
+						return err
 					}
 				} else {
 					log.Info().Str("event", evt.Event).Msg("Login event")
@@ -251,7 +265,7 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 		log.Info().Msg("Already logged in, just connect")
 		err = client.Connect()
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 
@@ -262,11 +276,15 @@ func (s *Controller) StartClient(userID int, textjid string, token string, subsc
 			log.Info().Str("userid", strconv.Itoa(userID)).Msg("Received kill signal")
 			client.Disconnect()
 			delete(s.ClientPointer, userID)
-			err := s.Repository.DisconnectUser(userID)
+			user, err := repository.NewUser(s.Repository, userID)
 			if err != nil {
-				log.Error().Err(err).Msg(err.Error())
+				return err
 			}
-			return
+			err = user.Disconnect()
+			if err != nil {
+				return err
+			}
+			return nil
 		default:
 			time.Sleep(1000 * time.Millisecond)
 			//log.Info().Str("jid",textjid).Msg("Loop the loop")
@@ -304,14 +322,14 @@ func (s *Controller) AuthAlice(next http.Handler) http.Handler {
 		}
 
 		if userid == 0 {
-			s.Respond(w, r, http.StatusUnauthorized, errors.New("Unauthorized"))
+			s.Respond(w, r, http.StatusUnauthorized, errors.New("unauthorized"))
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// Middleware: Authenticate connections based on Token header/uri parameter
+// Auth Middleware: Authenticate connections based on Token header/uri parameter
 func (s *Controller) Auth(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -342,7 +360,7 @@ func (s *Controller) Auth(handler http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if userid == 0 {
-			s.Respond(w, r, http.StatusUnauthorized, errors.New("Unauthorized"))
+			s.Respond(w, r, http.StatusUnauthorized, errors.New("unauthorized"))
 			return
 		}
 		handler(w, r.WithContext(ctx))

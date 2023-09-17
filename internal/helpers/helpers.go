@@ -15,7 +15,7 @@ func Find(slice []string, val string) bool {
 	return false
 }
 
-// Update entry in User map
+// Updates entry in User map
 func UpdateUserInfo(values interface{}, field string, value string) interface{} {
 	log.Debug().Str("field", field).Str("value", value).Msg("User info updated")
 	values.(internalTypes.Values).M[field] = value
