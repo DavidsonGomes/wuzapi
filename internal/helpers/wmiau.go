@@ -1,12 +1,8 @@
-package main
+package helpers
 
 import (
-	"context"
-	"crypto/tls"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"mime"
 	"os"
@@ -14,100 +10,21 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"time"
+	internalTypes "wuzapi/internal/types"
+	"wuzapi/repository"
+	"wuzapi/webhook"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/mdp/qrterminal/v3"
 	"github.com/patrickmn/go-cache"
+	"github.com/rs/zerolog/log"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
-	waProto "go.mau.fi/whatsmeow/binary/proto"
-	"go.mau.fi/whatsmeow/store"
-	_ "modernc.org/sqlite"
-
-	//	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
-	waLog "go.mau.fi/whatsmeow/util/log"
-	//"google.golang.org/protobuf/proto"
 )
 
-// var wlog waLog.Logger
-var clientPointer = make(map[int]*whatsmeow.Client)
-var clientHttp = make(map[int]*resty.Client)
-var historySyncID int32
-
-type MyClient struct {
-	WAClient       *whatsmeow.Client
-	eventHandlerID uint32
-	userID         int
-	token          string
-	subscriptions  []string
-	db             *sql.DB
-}
-
-// Connects to Whatsapp Websocket on server startup if last state was connected
-func (s *server) connectOnStartup() {
-	rows, err := s.db.Query("SELECT id,token,jid,webhook,events FROM users WHERE connected=1")
-	if err != nil {
-		log.Error().Err(err).Msg("DB Problem")
-		return
-	}
-	defer rows.Close()
-	for rows.Next() {
-		txtid := ""
-		token := ""
-		jid := ""
-		webhook := ""
-		events := ""
-		err = rows.Scan(&txtid, &token, &jid, &webhook, &events)
-		if err != nil {
-			log.Error().Err(err).Msg("DB Problem")
-			return
-		} else {
-			log.Info().Str("token", token).Msg("Connect to Whatsapp on startup")
-			v := Values{map[string]string{
-				"Id":      txtid,
-				"Jid":     jid,
-				"Webhook": webhook,
-				"Token":   token,
-				"Events":  events,
-			}}
-			userinfocache.Set(token, v, cache.NoExpiration)
-			userid, _ := strconv.Atoi(txtid)
-			// Gets and set subscription to webhook events
-			eventarray := strings.Split(events, ",")
-
-			var subscribedEvents []string
-			if len(eventarray) < 1 {
-				if !Find(subscribedEvents, "All") {
-					subscribedEvents = append(subscribedEvents, "All")
-				}
-			} else {
-				for _, arg := range eventarray {
-					if !Find(messageTypes, arg) {
-						log.Warn().Str("Type", arg).Msg("Message type discarded")
-						continue
-					}
-					if !Find(subscribedEvents, arg) {
-						subscribedEvents = append(subscribedEvents, arg)
-					}
-				}
-			}
-			eventstring := strings.Join(subscribedEvents, ",")
-			log.Info().Str("events", eventstring).Str("jid", jid).Msg("Attempt to connect")
-			killchannel[userid] = make(chan bool)
-			go s.startClient(userid, jid, token, subscribedEvents)
-		}
-	}
-	err = rows.Err()
-	if err != nil {
-		log.Error().Err(err).Msg("DB Problem")
-	}
-}
-
-func parseJID(arg string) (types.JID, bool) {
+func ParseJID(arg string) (types.JID, bool) {
 	if arg == "" {
 		return types.NewJID("", types.DefaultUserServer), false
 	}
@@ -147,171 +64,49 @@ func parseJID(arg string) (types.JID, bool) {
 	}
 }
 
-func (s *server) startClient(userID int, textjid string, token string, subscriptions []string) {
+var historySyncID int32
 
-	log.Info().Str("userid", strconv.Itoa(userID)).Str("jid", textjid).Msg("Starting websocket connection to Whatsapp")
-
-	var deviceStore *store.Device
-	var err error
-
-	if clientPointer[userID] != nil {
-		isConnected := clientPointer[userID].IsConnected()
-		if isConnected == true {
-			return
-		}
-	}
-
-	/*  container is initialized on main to have just one connection and avoid sqlite locks
-
-		dbDirectory := "dbdata"
-	    _, err = os.Stat(dbDirectory)
-	    if os.IsNotExist(err) {
-	        errDir := os.MkdirAll(dbDirectory, 0751)
-	        if errDir != nil {
-	            panic("Could not create dbdata directory")
-	        }
-	    }
-
-		var container *sqlstore.Container
-
-		if(*waDebug!="") {
-			dbLog := waLog.Stdout("Database", *waDebug, true)
-			container, err = sqlstore.New("sqlite", "file:./dbdata/main.db?_foreign_keys=on", dbLog)
-		} else {
-			container, err = sqlstore.New("sqlite", "file:./dbdata/main.db?_foreign_keys=on", nil)
-		}
-		if err != nil {
-			panic(err)
-		}
-	*/
-
-	if textjid != "" {
-		jid, _ := parseJID(textjid)
-		// If you want multiple sessions, remember their JIDs and use .GetDevice(jid) or .GetAllDevices() instead.
-		//deviceStore, err := container.GetFirstDevice()
-		deviceStore, err = container.GetDevice(jid)
-		if err != nil {
-			panic(err)
-		}
-	} else {
-		log.Warn().Msg("No jid found. Creating new device")
-		deviceStore = container.NewDevice()
-	}
-
-	if deviceStore == nil {
-		log.Warn().Msg("No store found. Creating new one")
-		deviceStore = container.NewDevice()
-	}
-
-	//store.CompanionProps.PlatformType = waProto.CompanionProps_CHROME.Enum()
-	//store.CompanionProps.Os = proto.String("Mac OS")
-
-	osName := "Mac OS 10"
-	store.DeviceProps.PlatformType = waProto.DeviceProps_UNKNOWN.Enum()
-	store.DeviceProps.Os = &osName
-
-	clientLog := waLog.Stdout("Client", *waDebug, true)
-	var client *whatsmeow.Client
-	if *waDebug != "" {
-		client = whatsmeow.NewClient(deviceStore, clientLog)
-	} else {
-		client = whatsmeow.NewClient(deviceStore, nil)
-	}
-	clientPointer[userID] = client
-	mycli := MyClient{client, 1, userID, token, subscriptions, s.db}
-	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
-	clientHttp[userID] = resty.New()
-	clientHttp[userID].SetRedirectPolicy(resty.FlexibleRedirectPolicy(15))
-	if *waDebug == "DEBUG" {
-		clientHttp[userID].SetDebug(true)
-	}
-	clientHttp[userID].SetTimeout(5 * time.Second)
-	clientHttp[userID].SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true})
-
-	if client.Store.ID == nil {
-		// No ID stored, new login
-
-		qrChan, err := client.GetQRChannel(context.Background())
-		if err != nil {
-			// This error means that we're already logged in, so ignore it.
-			if !errors.Is(err, whatsmeow.ErrQRStoreContainsID) {
-				log.Error().Err(err).Msg("Failed to get QR channel")
-			}
-		} else {
-			err = client.Connect() // Si no conectamos no se puede generar QR
-			if err != nil {
-				panic(err)
-			}
-			for evt := range qrChan {
-				if evt.Event == "code" {
-					// Display QR code in terminal (useful for testing/developing)
-					if *logType != "json" {
-						qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-						fmt.Println("QR code:\n", evt.Code)
-					}
-					// Store encoded/embeded base64 QR on database for retrieval with the /qr endpoint
-					image, _ := qrcode.Encode(evt.Code, qrcode.Medium, 256)
-					base64qrcode := "data:image/png;base64," + base64.StdEncoding.EncodeToString(image)
-					sqlStmt := `UPDATE users SET qrcode=? WHERE id=?`
-					_, err := s.db.Exec(sqlStmt, base64qrcode, userID)
-					if err != nil {
-						log.Error().Err(err).Msg(sqlStmt)
-					}
-				} else if evt.Event == "timeout" {
-					// Clear QR code from DB on timeout
-					sqlStmt := `UPDATE users SET qrcode=? WHERE id=?`
-					_, err := s.db.Exec(sqlStmt, "", userID)
-					if err != nil {
-						log.Error().Err(err).Msg(sqlStmt)
-					}
-					log.Warn().Msg("QR timeout killing channel")
-					delete(clientPointer, userID)
-					killchannel[userID] <- true
-				} else if evt.Event == "success" {
-					log.Info().Msg("QR pairing ok!")
-					// Clear QR code after pairing
-					sqlStmt := `UPDATE users SET qrcode=? WHERE id=?`
-					_, err := s.db.Exec(sqlStmt, "", userID)
-					if err != nil {
-						log.Error().Err(err).Msg(sqlStmt)
-					}
-				} else {
-					log.Info().Str("event", evt.Event).Msg("Login event")
-				}
-			}
-		}
-
-	} else {
-		// Already logged in, just connect
-		log.Info().Msg("Already logged in, just connect")
-		err = client.Connect()
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	// Keep connected client live until disconnected/killed
-	for {
-		select {
-		case <-killchannel[userID]:
-			log.Info().Str("userid", strconv.Itoa(userID)).Msg("Received kill signal")
-			client.Disconnect()
-			delete(clientPointer, userID)
-			sqlStmt := `UPDATE users SET connected=0 WHERE id=?`
-			_, err := s.db.Exec(sqlStmt, userID)
-			if err != nil {
-				log.Error().Err(err).Msg(sqlStmt)
-			}
-			return
-		default:
-			time.Sleep(1000 * time.Millisecond)
-			//log.Info().Str("jid",textjid).Msg("Loop the loop")
-		}
-	}
+type MyClient struct {
+	WAClient       *whatsmeow.Client
+	EventHandlerID uint32
+	user           *repository.UserDb
+	Token          string
+	Subscriptions  []string
+	UserInfoCache  *cache.Cache
+	KillChannel    map[int](chan bool)
+	ClientHttp     map[int]*resty.Client
 }
 
-func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
-	txtid := strconv.Itoa(mycli.userID)
+func NewClient(
+	WAClient *whatsmeow.Client,
+	EventHandlerID uint32,
+	UserID int,
+	Token string,
+	Subscriptions []string,
+	Repository repository.UserRepository,
+	UserInfoCache *cache.Cache,
+	KillChannel map[int](chan bool),
+	ClientHttp map[int]*resty.Client,
+) (*MyClient, error) {
+
+	user, err := repository.NewUser(Repository, UserID)
+	if err != nil {
+		return nil, err
+	}
+	return &MyClient{
+		WAClient:       WAClient,
+		EventHandlerID: EventHandlerID,
+		user:           user,
+		Token:          Token,
+		Subscriptions:  Subscriptions,
+		UserInfoCache:  UserInfoCache,
+		KillChannel:    KillChannel,
+		ClientHttp:     ClientHttp,
+	}, nil
+}
+
+func (mycli *MyClient) MyEventHandler(rawEvt interface{}) {
+	txtid := strconv.Itoa(mycli.user.Id)
 	postmap := make(map[string]interface{})
 	postmap["event"] = rawEvt
 	dowebhook := 0
@@ -349,33 +144,33 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		} else {
 			log.Info().Msg("Marked self as available")
 		}
-		sqlStmt := `UPDATE users SET connected=1 WHERE id=?`
-		_, err = mycli.db.Exec(sqlStmt, mycli.userID)
+		err = mycli.user.Connect()
 		if err != nil {
-			log.Error().Err(err).Msg(sqlStmt)
+			log.Error().Err(err).Msg(err.Error())
 			return
 		}
 	case *events.PairSuccess:
 		postmap["type"] = "PairSuccess"
 		dowebhook = 1
-		log.Info().Str("userid", strconv.Itoa(mycli.userID)).Str("token", mycli.token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
+		log.Info().Str("userid", strconv.Itoa(mycli.user.Id)).Str("token", mycli.Token).Str("ID", evt.ID.String()).Str("BusinessName", evt.BusinessName).Str("Platform", evt.Platform).Msg("QR Pair Success")
+
 		jid := evt.ID
-		sqlStmt := `UPDATE users SET jid=? WHERE id=?`
-		_, err := mycli.db.Exec(sqlStmt, jid, mycli.userID)
+		mycli.user.Jid = jid.String()
+		err := mycli.user.SetJid(jid.String())
 		if err != nil {
-			log.Error().Err(err).Msg(sqlStmt)
+			log.Error().Err(err).Msg(err.Error())
 			return
 		}
 
-		myuserinfo, found := userinfocache.Get(mycli.token)
+		myuserinfo, found := mycli.UserInfoCache.Get(mycli.Token)
 		if !found {
 			log.Warn().Msg("No user info cached on pairing?")
 		} else {
-			txtid := myuserinfo.(Values).Get("Id")
-			token := myuserinfo.(Values).Get("Token")
-			v := updateUserInfo(myuserinfo, "Jid", fmt.Sprintf("%s", jid))
-			userinfocache.Set(token, v, cache.NoExpiration)
-			log.Info().Str("jid", jid.String()).Str("userid", txtid).Str("token", token).Msg("User information set")
+			txtid := myuserinfo.(internalTypes.Values).Get("Id")
+			token := myuserinfo.(internalTypes.Values).Get("Token")
+			v := UpdateUserInfo(myuserinfo, "Jid", fmt.Sprintf("%s", jid))
+			mycli.UserInfoCache.Set(token, v, cache.NoExpiration)
+			log.Info().Str("jid", jid.String()).Str("userid", txtid).Str("token", token).Msg("UserDb information set")
 		}
 	case *events.StreamReplaced:
 		log.Info().Msg("Received StreamReplaced event")
@@ -518,13 +313,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if evt.Unavailable {
 			postmap["state"] = "offline"
 			if evt.LastSeen.IsZero() {
-				log.Info().Str("from", evt.From.String()).Msg("User is now offline")
+				log.Info().Str("from", evt.From.String()).Msg("UserDb is now offline")
 			} else {
-				log.Info().Str("from", evt.From.String()).Str("lastSeen", fmt.Sprintf("%d", evt.LastSeen)).Msg("User is now offline")
+				log.Info().Str("from", evt.From.String()).Str("lastSeen", fmt.Sprintf("%d", evt.LastSeen)).Msg("UserDb is now offline")
 			}
 		} else {
 			postmap["state"] = "online"
-			log.Info().Str("from", evt.From.String()).Msg("User is now online")
+			log.Info().Str("from", evt.From.String()).Msg("UserDb is now online")
 		}
 	case *events.HistorySync:
 		postmap["type"] = "HistorySync"
@@ -565,11 +360,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		dowebhook = 1
 
 		log.Info().Str("reason", evt.Reason.String()).Msg("Logged out")
-		killchannel[mycli.userID] <- true
-		sqlStmt := `UPDATE users SET connected=0 WHERE id=?`
-		_, err := mycli.db.Exec(sqlStmt, mycli.userID)
+		mycli.KillChannel[mycli.user.Id] <- true
+		err := mycli.user.Disconnect()
 		if err != nil {
-			log.Error().Err(err).Msg(sqlStmt)
+			log.Error().Err(err).Msg(err.Error())
 			return
 		}
 	case *events.ChatPresence:
@@ -604,14 +398,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	if dowebhook == 1 {
 		// call webhook
 		webhookurl := ""
-		myuserinfo, found := userinfocache.Get(mycli.token)
+		myuserinfo, found := mycli.UserInfoCache.Get(mycli.Token)
 		if !found {
-			log.Warn().Str("token", mycli.token).Msg("Could not call webhook as there is no user for this token")
+			log.Warn().Str("token", mycli.Token).Msg("Could not call webhook as there is no user for this token")
 		} else {
-			webhookurl = myuserinfo.(Values).Get("Webhook")
+			webhookurl = myuserinfo.(internalTypes.Values).Get("Webhook")
 		}
 
-		if !Find(mycli.subscriptions, postmap["type"].(string)) && !Find(mycli.subscriptions, "All") {
+		if !Find(mycli.Subscriptions, postmap["type"].(string)) && !Find(mycli.Subscriptions, "All") {
 			log.Warn().Str("type", postmap["type"].(string)).Msg("Skipping webhook. Not subscribed for this type")
 			return
 		}
@@ -619,19 +413,20 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if webhookurl != "" {
 			log.Info().Str("url", webhookurl).Msg("Calling webhook")
 			values, _ := json.Marshal(postmap)
+			webhook := webhook.Webhook{ClientHttp: mycli.ClientHttp}
 			if path == "" {
 				data := make(map[string]string)
 				data["data"] = string(values)
-				data["token"] = mycli.token
-				go callHook(webhookurl, data, mycli.userID)
+				data["token"] = mycli.Token
+				go webhook.CallHook(webhookurl, data, mycli.user.Id)
 			} else {
 				data := make(map[string]string)
 				data["data"] = string(values)
-				data["token"] = mycli.token
-				go callHookFile(webhookurl, data, mycli.userID, path)
+				data["token"] = mycli.Token
+				go webhook.CallHookFile(webhookurl, data, mycli.user.Id, path)
 			}
 		} else {
-			log.Warn().Str("userid", strconv.Itoa(mycli.userID)).Msg("No webhook set for user")
+			log.Warn().Str("userid", strconv.Itoa(mycli.user.Id)).Msg("No webhook set for user")
 		}
 	}
 }
