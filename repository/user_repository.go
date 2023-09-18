@@ -39,9 +39,9 @@ func (r *userRepository) CreateUser(user *User) (*User, error) {
 }
 
 func (r *userRepository) CreateAdminUser(token string) error {
-	if user, _ := r.GetAdminUser(); user != nil {
+	if user, _ := r.GetAdminUser(); user.Id != 0 {
 		user.Token = token
-		return r.db.Updates(user).Error
+		return r.db.Model(&User{}).Where("name like 'admin'").Updates(user).Error
 	}
 	return r.db.Create(&User{Name: "admin", Token: token}).Error
 }

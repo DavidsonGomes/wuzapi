@@ -14,6 +14,7 @@ import (
 	controllerBase "wuzapi/controllers/controller_base"
 	"wuzapi/repository"
 
+	"github.com/glebarez/sqlite"
 	"github.com/go-resty/resty/v2"
 	"github.com/gorilla/mux"
 	"github.com/patrickmn/go-cache"
@@ -21,7 +22,6 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -78,7 +78,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = db.AutoMigrate(&repository.UserDb{})
+	err = db.AutoMigrate(&repository.User{})
 	if err != nil {
 		log.Fatal(err)
 	}
